@@ -1,0 +1,50 @@
+.panel {
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #151513;
+  padding: clamp(1.25rem, 3vw, 2rem);
+}
+.notice {
+  margin-bottom: 1rem;
+  padding: 0.8rem 1rem;
+  border: 1px solid #555247;
+  border-radius: 10px;
+  background: #23221d;
+  line-height: 1.45;
+}
+.notice-error {
+  border-color: #713c34;
+  background: #2b1916;
+  color: #ffb0a2;
+}
+.form-stack {
+  display: grid;
+  gap: 1.1rem;
+}
+.form-stack label {
+  display: grid;
+  gap: 0.45rem;
+  font-size: 0.86rem;
+  font-weight: 720;
+}
+.form-stack small {
+  color: var(--muted);
+  font-weight: 450;
+}
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.field-error {
+  color: var(--danger) !important;
+}
+.form-panel {
+  margin-top: 1.5rem;
+}
+.score-field strong {
+  color: var(--acid);
+}
+.score-field input {
+  accent-color: var(--acid);
+}

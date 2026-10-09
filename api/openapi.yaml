@@ -1,0 +1,810 @@
+openapi: 3.1.0
+info:
+  title: BadGoodTune API
+  version: 1.0.0
+  description: |
+    HTTP/JSON API for the BadGoodTune music review catalog.
+    The API follows resource-oriented conventions inspired by Google AIPs and
+    uses RFC 9457 Problem Details for errors.
+servers:
+  - url: /
+    description: Same-origin deployment
+tags:
+  - name: Identity
+  - name: Albums
+  - name: Reviews
+  - name: Operations
+
+paths:
+  /api/v1/users:
+    post:
+      operationId: registerUser
+      tags: [Identity]
+      summary: Register a user and create the first session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterUserRequest'
+      responses:
+        '201':
+          description: User and session created
+          headers:
+            Location:
+              description: URI of the current user resource
+              schema:
+                type: string
+            Set-Cookie:
+              description: HttpOnly session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionView'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/users/me:
+    get:
+      operationId: getCurrentUser
+      tags: [Identity]
+      summary: Get the authenticated user
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/sessions:
+    post:
+      operationId: createSession
+      tags: [Identity]
+      summary: Authenticate and create a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '201':
+          description: Session created
+          headers:
+            Location:
+              description: URI of the current session
+              schema:
+                type: string
+            Set-Cookie:
+              description: HttpOnly session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionView'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/sessions/current:
+    delete:
+      operationId: deleteCurrentSession
+      tags: [Identity]
+      summary: Revoke the current session
+      description: Idempotent. Returns 204 even when no valid session is present.
+      responses:
+        '204':
+          description: Session revoked or already absent
+          headers:
+            Set-Cookie:
+              description: Expired session cookie
+              schema:
+                type: string
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/albums:
+    get:
+      operationId: listAlbums
+      tags: [Albums]
+      summary: List albums
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+        - name: q
+          in: query
+          description: Case-insensitive substring of artist or title
+          schema:
+            type: string
+            maxLength: 200
+        - name: genre
+          in: query
+          schema:
+            type: string
+            maxLength: 50
+        - name: releaseYear
+          in: query
+          description: Must not be later than the next calendar year.
+          schema:
+            type: integer
+            minimum: 1877
+        - name: orderBy
+          in: query
+          description: Supported stable ordering
+          schema:
+            type: string
+            enum: [createdAt desc, releaseYear desc, rating desc]
+            default: createdAt desc
+      responses:
+        '200':
+          description: A page of albums
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListAlbumsResponse'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createAlbum
+      tags: [Albums]
+      summary: Create an album
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAlbumRequest'
+      responses:
+        '201':
+          description: Album created
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Album'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/albums/{albumId}:
+    parameters:
+      - $ref: '#/components/parameters/AlbumId'
+    get:
+      operationId: getAlbum
+      tags: [Albums]
+      summary: Get an album
+      responses:
+        '200':
+          description: Album
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Album'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateAlbum
+      tags: [Albums]
+      summary: Update an owned album
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAlbumRequest'
+      responses:
+        '200':
+          description: Updated album
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Album'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '412': {$ref: '#/components/responses/FailedPrecondition'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: deleteAlbum
+      tags: [Albums]
+      summary: Delete an owned album without reviews
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Version'
+      responses:
+        '204':
+          description: Album deleted
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '412': {$ref: '#/components/responses/FailedPrecondition'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/albums/{albumId}/reviews:
+    parameters:
+      - $ref: '#/components/parameters/AlbumId'
+    get:
+      operationId: listReviews
+      tags: [Reviews]
+      summary: List reviews for an album
+      parameters:
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/PageToken'
+        - name: orderBy
+          in: query
+          schema:
+            type: string
+            enum: [createdAt desc, score desc]
+            default: createdAt desc
+      responses:
+        '200':
+          description: A page of reviews
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListReviewsResponse'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    post:
+      operationId: createReview
+      tags: [Reviews]
+      summary: Create a review for an album
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+      responses:
+        '201':
+          description: Review created
+          headers:
+            Location:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /api/v1/albums/{albumId}/reviews/{reviewId}:
+    parameters:
+      - $ref: '#/components/parameters/AlbumId'
+      - $ref: '#/components/parameters/ReviewId'
+    get:
+      operationId: getReview
+      tags: [Reviews]
+      summary: Get a review
+      responses:
+        '200':
+          description: Review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    patch:
+      operationId: updateReview
+      tags: [Reviews]
+      summary: Update an authored review
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReviewRequest'
+      responses:
+        '200':
+          description: Updated review
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Review'
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/FailedPrecondition'}
+        '413': {$ref: '#/components/responses/PayloadTooLarge'}
+        '415': {$ref: '#/components/responses/UnsupportedMediaType'}
+        '500': {$ref: '#/components/responses/InternalError'}
+    delete:
+      operationId: deleteReview
+      tags: [Reviews]
+      summary: Delete an authored review
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Version'
+      responses:
+        '204':
+          description: Review deleted
+        '400': {$ref: '#/components/responses/BadRequest'}
+        '401': {$ref: '#/components/responses/Unauthenticated'}
+        '403': {$ref: '#/components/responses/PermissionDenied'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '412': {$ref: '#/components/responses/FailedPrecondition'}
+        '500': {$ref: '#/components/responses/InternalError'}
+
+  /health/live:
+    get:
+      operationId: getLiveness
+      tags: [Operations]
+      summary: Report that the HTTP process is alive
+      responses:
+        '200':
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+
+  /health/ready:
+    get:
+      operationId: getReadiness
+      tags: [Operations]
+      summary: Report whether PostgreSQL is reachable
+      responses:
+        '200':
+          description: Application is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503': {$ref: '#/components/responses/Unavailable'}
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: badgoodtune_session
+      description: |
+        Opaque HttpOnly session cookie. Production deployments may configure a
+        __Host- prefixed name while preserving the same authentication semantics.
+
+  parameters:
+    AlbumId:
+      name: albumId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ReviewId:
+      name: reviewId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PageSize:
+      name: pageSize
+      in: query
+      description: Maximum results. Defaults to 20; values above 100 are coerced to 100.
+      schema:
+        type: integer
+        minimum: 0
+        default: 20
+    PageToken:
+      name: pageToken
+      in: query
+      description: Opaque token returned by the previous list request.
+      schema:
+        type: string
+        maxLength: 2048
+    Version:
+      name: version
+      in: query
+      required: true
+      description: Last observed resource version used as an optimistic precondition.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
+  schemas:
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, username, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[A-Za-z0-9_]+$'
+        createdAt:
+          type: string
+          format: date-time
+
+    SessionView:
+      type: object
+      additionalProperties: false
+      required: [user, expiresAt]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        expiresAt:
+          type: string
+          format: date-time
+
+    RegisterUserRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 3
+          maxLength: 32
+          pattern: '^[A-Za-z0-9_]+$'
+        password:
+          type: string
+          minLength: 12
+          maxLength: 128
+          writeOnly: true
+
+    CreateSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 32
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+          writeOnly: true
+
+    Album:
+      type: object
+      additionalProperties: false
+      required:
+        [id, owner, artist, title, releaseYear, genre, reviewCount, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        owner:
+          $ref: '#/components/schemas/User'
+        artist:
+          type: string
+          minLength: 1
+          maxLength: 200
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        releaseYear:
+          type: integer
+          minimum: 1877
+          description: Must not be later than the next calendar year.
+        genre:
+          type: string
+          minLength: 1
+          maxLength: 50
+        averageScore:
+          type: number
+          format: double
+          minimum: 1
+          maximum: 10
+          description: Omitted when no reviews exist.
+        reviewCount:
+          type: integer
+          format: int64
+          minimum: 0
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateAlbumRequest:
+      type: object
+      additionalProperties: false
+      required: [artist, title, releaseYear, genre]
+      properties:
+        artist:
+          type: string
+          minLength: 1
+          maxLength: 200
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        releaseYear:
+          type: integer
+          minimum: 1877
+          description: Must not be later than the next calendar year.
+        genre:
+          type: string
+          minLength: 1
+          maxLength: 50
+
+    UpdateAlbumRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 2
+      required: [version]
+      properties:
+        artist:
+          type: string
+          minLength: 1
+          maxLength: 200
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        releaseYear:
+          type: integer
+          minimum: 1877
+          description: Must not be later than the next calendar year.
+        genre:
+          type: string
+          minLength: 1
+          maxLength: 50
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+
+    ListAlbumsResponse:
+      type: object
+      additionalProperties: false
+      required: [albums]
+      properties:
+        albums:
+          type: array
+          items:
+            $ref: '#/components/schemas/Album'
+        nextPageToken:
+          type: string
+
+    Review:
+      type: object
+      additionalProperties: false
+      required: [id, albumId, author, headline, body, score, version, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        albumId:
+          type: string
+          format: uuid
+        author:
+          $ref: '#/components/schemas/User'
+        headline:
+          type: string
+          minLength: 1
+          maxLength: 120
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        score:
+          type: integer
+          minimum: 1
+          maximum: 10
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateReviewRequest:
+      type: object
+      additionalProperties: false
+      required: [headline, body, score]
+      properties:
+        headline:
+          type: string
+          minLength: 1
+          maxLength: 120
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        score:
+          type: integer
+          minimum: 1
+          maximum: 10
+
+    UpdateReviewRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 2
+      required: [version]
+      properties:
+        headline:
+          type: string
+          minLength: 1
+          maxLength: 120
+        body:
+          type: string
+          minLength: 1
+          maxLength: 10000
+        score:
+          type: integer
+          minimum: 1
+          maximum: 10
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+
+    ListReviewsResponse:
+      type: object
+      additionalProperties: false
+      required: [reviews]
+      properties:
+        reviews:
+          type: array
+          items:
+            $ref: '#/components/schemas/Review'
+        nextPageToken:
+          type: string
+
+    FieldViolation:
+      type: object
+      additionalProperties: false
+      required: [field, description]
+      properties:
+        field:
+          type: string
+        description:
+          type: string
+
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, requestId]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+          default: about:blank
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+          enum:
+            [INVALID_ARGUMENT, UNAUTHENTICATED, PERMISSION_DENIED, NOT_FOUND,
+             CONFLICT, FAILED_PRECONDITION, PAYLOAD_TOO_LARGE,
+             UNSUPPORTED_MEDIA_TYPE, INTERNAL, UNAVAILABLE]
+        requestId:
+          type: string
+        violations:
+          type: array
+          items:
+            $ref: '#/components/schemas/FieldViolation'
+
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unauthenticated:
+      description: Missing or invalid session
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    PermissionDenied:
+      description: Authenticated user does not own the resource
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    NotFound:
+      description: Resource not found
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Conflict:
+      description: Resource state conflicts with the operation
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    FailedPrecondition:
+      description: Resource version no longer matches
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    PayloadTooLarge:
+      description: Request body exceeds the configured limit
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    UnsupportedMediaType:
+      description: Request body is not application/json
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unavailable:
+      description: Required dependency is unavailable
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}

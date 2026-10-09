@@ -1,0 +1,84 @@
+name: badgoodtune
+
+services:
+  postgres:
+    image: postgres:17.11-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-badgoodtune}
+      POSTGRES_USER: ${POSTGRES_USER:-badgoodtune}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-badgoodtune}
+    ports:
+      - "${POSTGRES_PORT:-54329}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+      start_period: 3s
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  migrate:
+    build:
+      context: .
+    command: ["/app/migrate"]
+    entrypoint: []
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://badgoodtune:badgoodtune@postgres:5432/badgoodtune?sslmode=disable}
+      DATABASE_CONNECT_TIMEOUT: ${DATABASE_CONNECT_TIMEOUT:-5s}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  app:
+    build:
+      context: .
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      HTTP_ADDRESS: :8080
+      DATABASE_URL: ${DATABASE_URL:-postgres://badgoodtune:badgoodtune@postgres:5432/badgoodtune?sslmode=disable}
+      STATIC_DIR: /app/web
+      COOKIE_NAME: ${COOKIE_NAME:-badgoodtune_session}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SESSION_TTL: ${SESSION_TTL:-168h}
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:-10s}
+      HTTP_READ_HEADER_TIMEOUT: ${HTTP_READ_HEADER_TIMEOUT:-5s}
+      HTTP_READ_TIMEOUT: ${HTTP_READ_TIMEOUT:-10s}
+      HTTP_WRITE_TIMEOUT: ${HTTP_WRITE_TIMEOUT:-30s}
+      HTTP_IDLE_TIMEOUT: ${HTTP_IDLE_TIMEOUT:-60s}
+      READINESS_TIMEOUT: ${READINESS_TIMEOUT:-1s}
+      DATABASE_CONNECT_TIMEOUT: ${DATABASE_CONNECT_TIMEOUT:-5s}
+      DATABASE_MAX_CONNS: ${DATABASE_MAX_CONNS:-10}
+      DATABASE_MIN_CONNS: ${DATABASE_MIN_CONNS:-1}
+      ARGON2_MAX_CONCURRENT: ${ARGON2_MAX_CONCURRENT:-2}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/health/ready"]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 3s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    stop_grace_period: 15s
+
+volumes:
+  postgres-data:

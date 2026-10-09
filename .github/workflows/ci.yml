@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11-alpine
+        env:
+          POSTGRES_DB: badgoodtune_test
+          POSTGRES_USER: badgoodtune
+          POSTGRES_PASSWORD: badgoodtune
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U badgoodtune -d badgoodtune_test"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: web
+      - name: Check generated code
+        run: make generate-check
+      - name: Check formatting
+        run: make fmt-check
+      - name: Vet Go code
+        run: make vet
+      - name: Run Go tests
+        run: make test
+      - name: Run PostgreSQL integration tests
+        run: make test-integration-running
+      - name: Check frontend
+        run: make web-check
+      - name: Build binaries
+        run: make build
+      - name: Audit dependencies
+        run: make security-check
+
+  compose-smoke:
+    runs-on: ubuntu-latest
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the complete system
+        run: make compose-smoke
+      - name: Print logs on failure
+        if: failure()
+        run: docker compose logs
+      - name: Stop the system
+        if: always()
+        run: make compose-down

@@ -1,0 +1,207 @@
+.auth-layout {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  align-items: center;
+  gap: clamp(3rem, 8vw, 8rem);
+  min-height: calc(100vh - 145px);
+  padding-block: 4rem;
+}
+.auth-pitch h1,
+.narrow-page h1,
+.not-found h1 {
+  margin: 0.55rem 0 1rem;
+  font-family: var(--serif);
+  font-size: clamp(2.8rem, 6vw, 5.3rem);
+  font-weight: 400;
+  letter-spacing: -0.052em;
+  line-height: 0.95;
+}
+.auth-pitch p:not(.kicker),
+.page-intro,
+.not-found p {
+  max-width: 560px;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1.6;
+}
+.auth-panel h2 {
+  margin-top: 0;
+  font-family: var(--serif);
+  font-size: 2rem;
+  font-weight: 400;
+}
+.auth-switch {
+  margin: 1.4rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.auth-switch a {
+  color: var(--acid);
+}
+.narrow-page {
+  max-width: 720px;
+  min-height: calc(100vh - 145px);
+  padding-block: 4rem 6rem;
+}
+.back-link {
+  display: inline-block;
+  margin-bottom: 2.5rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+  text-underline-offset: 0.25rem;
+}
+
+.detail-page {
+  min-height: 80vh;
+  padding-block: 2.5rem 7rem;
+}
+.detail-loading {
+  padding-block: 8rem;
+  color: var(--muted);
+  text-align: center;
+}
+.album-hero {
+  display: grid;
+  grid-template-columns: minmax(260px, 410px) 1fr;
+  align-items: center;
+  gap: clamp(2.5rem, 7vw, 7rem);
+  padding: 1rem 0 6rem;
+}
+.album-cover-large {
+  aspect-ratio: 1;
+  border-radius: 22px;
+  box-shadow: 30px 32px 0 #080807;
+  font-size: clamp(6rem, 16vw, 12rem);
+}
+.album-hero-copy {
+  min-width: 0;
+}
+.album-hero-copy h1 {
+  margin: 0.7rem 0 0.2rem;
+  overflow-wrap: anywhere;
+  font-family: var(--serif);
+  font-size: clamp(3.2rem, 7vw, 6.8rem);
+  font-weight: 400;
+  letter-spacing: -0.06em;
+  line-height: 0.88;
+}
+.detail-meta {
+  justify-content: flex-start;
+}
+.detail-artist {
+  margin: 0 0 2.3rem;
+  color: #c9c3b8;
+  font-size: clamp(1.15rem, 2vw, 1.5rem);
+}
+.rating-lockup {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+.rating-number {
+  color: var(--acid);
+  font-family: var(--serif);
+  font-size: 4rem;
+  line-height: 1;
+}
+.contributor {
+  margin-bottom: 1.8rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.reviews-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(310px, 0.46fr);
+  gap: clamp(2rem, 6vw, 5rem);
+}
+.review-list {
+  display: grid;
+  gap: 1rem;
+}
+.review-card {
+  padding: 1.4rem;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.018), transparent);
+}
+.review-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+.review-score {
+  color: var(--acid);
+  font-family: var(--serif);
+  font-size: 2.4rem;
+}
+.review-byline {
+  display: grid;
+  justify-items: end;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+.review-byline strong {
+  color: var(--ink);
+}
+.review-card h3 {
+  margin: 0.8rem 0 0.55rem;
+  font-family: var(--serif);
+  font-size: 1.55rem;
+  font-weight: 400;
+}
+.review-body {
+  margin-bottom: 0.7rem;
+  color: #cbc5ba;
+  line-height: 1.68;
+  white-space: pre-wrap;
+}
+.review-actions {
+  justify-content: flex-end;
+}
+.review-aside {
+  position: relative;
+}
+.sticky-panel {
+  position: sticky;
+  top: 100px;
+}
+.sticky-panel h2 {
+  margin: 0.4rem 0 1rem;
+  font-family: var(--serif);
+  font-size: 2rem;
+  font-weight: 400;
+}
+.compact-empty {
+  padding-block: 2rem;
+}
+.review-form {
+  margin-top: 1.2rem;
+}
+
+.not-found {
+  display: grid;
+  place-items: start;
+  align-content: center;
+  min-height: calc(100vh - 145px);
+  padding-block: 5rem;
+}
+.not-found h1 {
+  max-width: 700px;
+}
+.not-found .button {
+  margin-top: 1rem;
+}
+.site-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 2rem max(20px, calc((100vw - 1180px) / 2));
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.app-notice {
+  padding-top: 1rem;
+}

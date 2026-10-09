@@ -26,6 +26,18 @@ go.work.sum
 
 # env file
 .env
+.env.*
+!.env.example
+
+# Frontend dependencies and build output
+node_modules/
+web/node_modules/
+web/dist/
+
+# Local build output and caches
+bin/
+.cache/
+.DS_Store
 
 # Editor/IDE
 # .idea/
