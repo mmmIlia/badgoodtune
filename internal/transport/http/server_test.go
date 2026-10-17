@@ -9,8 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -121,7 +119,7 @@ func TestCrossOriginMutationIsRejected(t *testing.T) {
 	assert.Equal(t, openapi.PERMISSIONDENIED, decodeProblem(t, response).Code)
 }
 
-func TestHealthAndSPAResponses(t *testing.T) {
+func TestHealthAndUnknownRouteResponses(t *testing.T) {
 	handler := newTestHandler(t, testDependencies{})
 
 	live := httptest.NewRecorder()
@@ -130,14 +128,9 @@ func TestHealthAndSPAResponses(t *testing.T) {
 	assert.NotEmpty(t, live.Header().Get("X-Request-ID"))
 	assert.Equal(t, "nosniff", live.Header().Get("X-Content-Type-Options"))
 
-	spa := httptest.NewRecorder()
-	handler.ServeHTTP(spa, httptest.NewRequest(http.MethodGet, "/albums/example", nil))
-	require.Equal(t, http.StatusOK, spa.Code)
-	assert.Contains(t, spa.Body.String(), "BadGoodTune test")
-
-	asset := httptest.NewRecorder()
-	handler.ServeHTTP(asset, httptest.NewRequest(http.MethodGet, "/missing.js", nil))
-	assert.Equal(t, http.StatusNotFound, asset.Code)
+	unknown := httptest.NewRecorder()
+	handler.ServeHTTP(unknown, httptest.NewRequest(http.MethodGet, "/albums/example", nil))
+	assert.Equal(t, http.StatusNotFound, unknown.Code)
 }
 
 func TestHealthDoesNotLoadUserSession(t *testing.T) {
@@ -161,24 +154,6 @@ func TestReadinessReportsDependencyFailure(t *testing.T) {
 	assert.Equal(t, openapi.UNAVAILABLE, decodeProblem(t, response).Code)
 }
 
-func TestHandlerRequiresSPAEntrypoint(t *testing.T) {
-	t.Parallel()
-
-	_, err := NewHandler(Dependencies{
-		Auth:    authUseCasesStub{},
-		Albums:  &albumUseCasesStub{},
-		Reviews: reviewUseCasesStub{},
-		Probe:   probeStub{},
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}, Options{
-		CookieName:       "test_session",
-		ReadinessTimeout: time.Second,
-		StaticDir:        t.TempDir(),
-	})
-
-	assert.ErrorContains(t, err, "SPA entrypoint")
-}
-
 type testDependencies struct {
 	auth    AuthUseCases
 	albums  AlbumUseCases
@@ -188,8 +163,6 @@ type testDependencies struct {
 
 func newTestHandler(t *testing.T, custom testDependencies) http.Handler {
 	t.Helper()
-	staticDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(staticDir, "index.html"), []byte("<h1>BadGoodTune test</h1>"), 0o600))
 	if custom.auth == nil {
 		custom.auth = authUseCasesStub{}
 	}
@@ -211,7 +184,6 @@ func newTestHandler(t *testing.T, custom testDependencies) http.Handler {
 	}, Options{
 		CookieName:       "test_session",
 		ReadinessTimeout: time.Second,
-		StaticDir:        staticDir,
 	})
 	require.NoError(t, err)
 	return handler

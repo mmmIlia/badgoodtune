@@ -48,5 +48,4 @@ type Options struct {
 	CookieName       string
 	CookieSecure     bool
 	ReadinessTimeout time.Duration
-	StaticDir        string
 }

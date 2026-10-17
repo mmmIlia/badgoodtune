@@ -43,7 +43,7 @@ func TestProductionConfigRequiresSecureHostCookie(t *testing.T) {
 	settings := config.Config{
 		App: config.App{Environment: "production"},
 		HTTP: config.HTTP{
-			Address: ":8080", StaticDir: "web/dist", ShutdownTimeout: time.Second,
+			Address: ":8080", ShutdownTimeout: time.Second,
 			ReadHeaderTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second,
 			IdleTimeout: time.Second, ReadinessTimeout: time.Second,
 		},

@@ -21,7 +21,6 @@ type App struct {
 
 type HTTP struct {
 	Address           string        `env:"HTTP_ADDRESS" env-default:":8080"`
-	StaticDir         string        `env:"STATIC_DIR" env-default:"web/dist"`
 	ShutdownTimeout   time.Duration `env:"SHUTDOWN_TIMEOUT" env-default:"10s"`
 	ReadHeaderTimeout time.Duration `env:"HTTP_READ_HEADER_TIMEOUT" env-default:"5s"`
 	ReadTimeout       time.Duration `env:"HTTP_READ_TIMEOUT" env-default:"10s"`

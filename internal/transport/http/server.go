@@ -50,15 +50,10 @@ func NewHandler(deps Dependencies, options Options) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	spa, err := newSPAHandler(options.StaticDir)
-	if err != nil {
-		return nil, err
-	}
 
 	routes := http.NewServeMux()
 	routes.Handle("/api/", api)
 	routes.Handle("/health/", health)
-	routes.Handle("/", spa)
 	return server.middleware(routes), nil
 }
 

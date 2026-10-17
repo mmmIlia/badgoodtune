@@ -52,9 +52,6 @@ func (h HTTP) problems() []string {
 	if strings.TrimSpace(h.Address) == "" {
 		problems = append(problems, "HTTP_ADDRESS must not be empty")
 	}
-	if strings.TrimSpace(h.StaticDir) == "" {
-		problems = append(problems, "STATIC_DIR must not be empty")
-	}
 	if h.ShutdownTimeout <= 0 {
 		problems = append(problems, "SHUTDOWN_TIMEOUT must be positive")
 	}

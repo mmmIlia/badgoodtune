@@ -43,7 +43,6 @@ func New(
 		CookieName:       authConfig.CookieName,
 		CookieSecure:     authConfig.CookieSecure,
 		ReadinessTimeout: httpConfig.ReadinessTimeout,
-		StaticDir:        httpConfig.StaticDir,
 	}, database, logger)
 	if err != nil {
 		database.Close()

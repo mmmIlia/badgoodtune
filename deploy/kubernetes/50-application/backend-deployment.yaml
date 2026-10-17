@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: badgoodtune-backend
+  namespace: badgoodtune
+  labels:
+    app.kubernetes.io/name: badgoodtune
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 120
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: badgoodtune
+      app.kubernetes.io/component: backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: badgoodtune
+        app.kubernetes.io/component: backend
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: backend
+          image: badgoodtune-backend:hw2
+          imagePullPolicy: Never
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: badgoodtune-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: badgoodtune-secret
+                  key: DATABASE_URL
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 1
+            failureThreshold: 15
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      terminationGracePeriodSeconds: 15

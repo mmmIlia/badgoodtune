@@ -19,8 +19,8 @@ services:
       - postgres-data:/var/lib/postgresql/data
 
   migrate:
-    build:
-      context: .
+    image: badgoodtune-backend:local
+    pull_policy: never
     command: ["/app/migrate"]
     entrypoint: []
     environment:
@@ -37,14 +37,14 @@ services:
     cap_drop:
       - ALL
 
-  app:
+  backend:
+    image: badgoodtune-backend:local
     build:
       context: .
     environment:
       APP_ENV: ${APP_ENV:-development}
       HTTP_ADDRESS: :8080
       DATABASE_URL: ${DATABASE_URL:-postgres://badgoodtune:badgoodtune@postgres:5432/badgoodtune?sslmode=disable}
-      STATIC_DIR: /app/web
       COOKIE_NAME: ${COOKIE_NAME:-badgoodtune_session}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
       SESSION_TTL: ${SESSION_TTL:-168h}
@@ -59,8 +59,6 @@ services:
       DATABASE_MIN_CONNS: ${DATABASE_MIN_CONNS:-1}
       ARGON2_MAX_CONCURRENT: ${ARGON2_MAX_CONCURRENT:-2}
       LOG_LEVEL: ${LOG_LEVEL:-info}
-    ports:
-      - "${HTTP_PORT:-8080}:8080"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -79,6 +77,32 @@ services:
       - ALL
     restart: unless-stopped
     stop_grace_period: 15s
+
+  frontend:
+    image: badgoodtune-frontend:local
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 3s
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+    stop_grace_period: 10s
 
 volumes:
   postgres-data:

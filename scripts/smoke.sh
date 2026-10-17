@@ -10,6 +10,7 @@ password="smoke-test-password"
 
 curl --fail --silent --show-error "$base_url/health/live" >/dev/null
 curl --fail --silent --show-error "$base_url/health/ready" >/dev/null
+curl --fail --silent --show-error "$base_url/healthz" | grep -q '^ok$'
 
 curl --fail --silent --show-error \
   --cookie-jar "$cookie_jar" \
