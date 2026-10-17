@@ -17,8 +17,10 @@ import (
 	"github.com/mmmIlia/badgoodtune/internal/repository/postgres"
 )
 
+const serviceName = "badgoodtune-migrate"
+
 func main() {
-	logger := logging.New(os.Stdout, "info")
+	logger := logging.New(os.Stdout, "info", serviceName)
 	if err := run(); err != nil {
 		logger.Error("migration failed", slog.String("error", err.Error()))
 		os.Exit(1)

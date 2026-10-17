@@ -21,7 +21,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: migrate
-          image: badgoodtune-backend:hw2
+          image: badgoodtune-backend:local
           imagePullPolicy: Never
           command:
             - /app/migrate

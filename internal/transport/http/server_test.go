@@ -154,6 +154,15 @@ func TestReadinessReportsDependencyFailure(t *testing.T) {
 	assert.Equal(t, openapi.UNAVAILABLE, decodeProblem(t, response).Code)
 }
 
+func TestRequestLogLevel(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, slog.LevelDebug, requestLogLevel("/health/live", http.StatusOK))
+	assert.Equal(t, slog.LevelInfo, requestLogLevel("/api/v1/albums", http.StatusOK))
+	assert.Equal(t, slog.LevelWarn, requestLogLevel("/api/v1/albums", http.StatusUnauthorized))
+	assert.Equal(t, slog.LevelError, requestLogLevel("/api/v1/albums", http.StatusInternalServerError))
+}
+
 type testDependencies struct {
 	auth    AuthUseCases
 	albums  AlbumUseCases

@@ -70,19 +70,29 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 		if status == 0 {
 			status = http.StatusOK
 		}
-		level := slog.LevelInfo
-		if strings.HasPrefix(r.URL.Path, "/health/") && status < http.StatusBadRequest {
-			level = slog.LevelDebug
-		}
+		level := requestLogLevel(r.URL.Path, status)
 		s.logger.LogAttrs(r.Context(), level, "HTTP request",
 			slog.String("request_id", requestIDFromContext(r.Context())),
 			slog.String("method", r.Method),
 			slog.String("operation", requestOperation(recorder, r)),
 			slog.Int("status", status),
 			slog.Int("response_bytes", recorder.bytes),
-			slog.Duration("duration", time.Since(started)),
+			slog.Float64("duration_ms", float64(time.Since(started))/float64(time.Millisecond)),
 		)
 	})
+}
+
+func requestLogLevel(path string, status int) slog.Level {
+	if strings.HasPrefix(path, "/health/") && status < http.StatusBadRequest {
+		return slog.LevelDebug
+	}
+	if status >= http.StatusInternalServerError {
+		return slog.LevelError
+	}
+	if status >= http.StatusBadRequest {
+		return slog.LevelWarn
+	}
+	return slog.LevelInfo
 }
 
 func (s *Server) recordOperation(next openapi.StrictHandlerFunc, operationID string) openapi.StrictHandlerFunc {

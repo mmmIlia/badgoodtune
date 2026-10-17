@@ -4,14 +4,24 @@ SHELL := /bin/sh
 GO_PACKAGES := ./cmd/... ./db/... ./internal/...
 KUBECTL ?= kubectl
 MINIKUBE ?= minikube
+HELM ?= helm
 K8S_NAMESPACE ?= badgoodtune
 K8S_DIR := deploy/kubernetes
-BACKEND_IMAGE ?= badgoodtune-backend:hw2
-FRONTEND_IMAGE ?= badgoodtune-frontend:hw2
+BACKEND_IMAGE ?= badgoodtune-backend:local
+FRONTEND_IMAGE ?= badgoodtune-frontend:local
 K8S_ROLLOUT_TIMEOUT ?= 180s
 K8S_JOB_TIMEOUT ?= 120s
+OBSERVABILITY_NAMESPACE ?= observability
+VICTORIA_LOGS_RELEASE ?= victoria-logs
+VICTORIA_LOGS_CHART := oci://ghcr.io/victoriametrics/helm-charts/victoria-logs-single
+VICTORIA_LOGS_CHART_VERSION := 0.13.10
+VICTORIA_LOGS_VALUES := deploy/observability/victoria-logs-values.yaml
+OBSERVABILITY_TIMEOUT ?= 300s
+LOGS_QUERY ?= _time:15m
+LOGS_LIMIT ?= 20
+export LOGS_QUERY LOGS_LIMIT
 
-.PHONY: help check generate generate-check fmt fmt-check vet test integration-db test-integration test-integration-running web-install web-generate web-check build db-up db-down compose-up compose-down compose-smoke security-check minikube-start minikube-status minikube-stop k8s-images k8s-load k8s-validate k8s-deploy k8s-up k8s-down k8s-status k8s-scale-up k8s-scale-down k8s-open k8s-delete
+.PHONY: help check generate generate-check fmt fmt-check vet test integration-db test-integration test-integration-running web-install web-generate web-check build db-up db-down compose-up compose-down compose-smoke security-check minikube-start minikube-status minikube-stop k8s-images k8s-load k8s-validate k8s-deploy k8s-up k8s-down k8s-status k8s-scale-up k8s-scale-down k8s-open k8s-delete logs-validate logs-deploy logs-status logs-debug logs-open logs-query logs-delete logs-generate hw3-up hw3-down
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -23,6 +33,7 @@ check: ## Run code generation, formatting, static analysis, tests, frontend chec
 	$(MAKE) test
 	$(MAKE) web-check
 	$(MAKE) k8s-validate
+	$(MAKE) logs-validate
 
 generate: ## Regenerate Go and TypeScript code from OpenAPI and SQL
 	cd api && go tool oapi-codegen --config oapi-codegen.yaml openapi.yaml
@@ -151,3 +162,73 @@ k8s-open: ## Open the frontend through its Minikube Service
 
 k8s-delete: ## Delete the application Namespace and its persistent data
 	$(KUBECTL) delete namespace $(K8S_NAMESPACE) --ignore-not-found
+
+logs-validate: ## Render and validate the VictoriaLogs Helm release
+	@set -eu; directory=$$(mktemp -d); manifest="$$directory/rendered.yaml"; \
+		trap 'rm -f "$$manifest"; rmdir "$$directory"' EXIT HUP INT TERM; \
+		$(HELM) template $(VICTORIA_LOGS_RELEASE) $(VICTORIA_LOGS_CHART) \
+			--version $(VICTORIA_LOGS_CHART_VERSION) \
+			--namespace $(OBSERVABILITY_NAMESPACE) \
+			--values $(VICTORIA_LOGS_VALUES) >"$$manifest"; \
+		test -s "$$manifest"; \
+		grep -q '^kind:' "$$manifest"; \
+		kubeconform -strict -summary "$$manifest"
+
+logs-deploy: ## Install or upgrade VictoriaLogs and Vector, then wait for readiness
+	$(HELM) upgrade --install $(VICTORIA_LOGS_RELEASE) $(VICTORIA_LOGS_CHART) \
+		--version $(VICTORIA_LOGS_CHART_VERSION) \
+		--namespace $(OBSERVABILITY_NAMESPACE) \
+		--create-namespace \
+		--values $(VICTORIA_LOGS_VALUES) \
+		--wait --timeout $(OBSERVABILITY_TIMEOUT)
+	$(KUBECTL) rollout status statefulset/victoria-logs -n $(OBSERVABILITY_NAMESPACE) --timeout=$(OBSERVABILITY_TIMEOUT)
+	$(KUBECTL) rollout status daemonset/victoria-logs-vector -n $(OBSERVABILITY_NAMESPACE) --timeout=$(OBSERVABILITY_TIMEOUT)
+
+logs-status: ## Show VictoriaLogs, Vector, Service, and storage state
+	$(KUBECTL) get pods,services,statefulsets,daemonsets,persistentvolumeclaims -n $(OBSERVABILITY_NAMESPACE)
+	@$(KUBECTL) rollout status statefulset/victoria-logs -n $(OBSERVABILITY_NAMESPACE) --timeout=10s
+	@if ! $(KUBECTL) rollout status daemonset/victoria-logs-vector -n $(OBSERVABILITY_NAMESPACE) --timeout=10s; then \
+		$(KUBECTL) logs daemonset/victoria-logs-vector -n $(OBSERVABILITY_NAMESPACE) --tail=100 --prefix; \
+		exit 1; \
+	fi
+
+logs-debug: ## Show recent Vector and VictoriaLogs container logs
+	$(KUBECTL) logs daemonset/victoria-logs-vector -n $(OBSERVABILITY_NAMESPACE) --tail=100 --prefix
+	$(KUBECTL) logs statefulset/victoria-logs -n $(OBSERVABILITY_NAMESPACE) --tail=100 --prefix
+
+logs-open: ## Forward VictoriaLogs vmui to http://127.0.0.1:9428/select/vmui/
+	$(KUBECTL) port-forward service/victoria-logs 9428:9428 -n $(OBSERVABILITY_NAMESPACE)
+
+logs-query: ## Run LOGS_QUERY against VictoriaLogs through a temporary port-forward
+	@set -eu; log=$$(mktemp); \
+		$(KUBECTL) port-forward service/victoria-logs 19428:9428 -n $(OBSERVABILITY_NAMESPACE) >"$$log" 2>&1 & pid=$$!; \
+		trap 'kill "$$pid" 2>/dev/null || true; wait "$$pid" 2>/dev/null || true; rm -f "$$log"' EXIT HUP INT TERM; \
+		i=0; until curl --fail --silent http://127.0.0.1:19428/health >/dev/null 2>&1; do \
+			i=$$((i + 1)); if [ "$$i" -ge 30 ]; then cat "$$log"; exit 1; fi; sleep 1; \
+		done; \
+		curl --fail --silent --show-error --get \
+			--data-urlencode "query=$$LOGS_QUERY" \
+			--data-urlencode "limit=$$LOGS_LIMIT" \
+			http://127.0.0.1:19428/select/logsql/query
+
+logs-generate: ## Run the CRUD smoke test through Kubernetes to generate application logs
+	@set -eu; log=$$(mktemp); \
+		$(KUBECTL) port-forward service/badgoodtune-frontend 18080:80 -n $(K8S_NAMESPACE) >"$$log" 2>&1 & pid=$$!; \
+		trap 'kill "$$pid" 2>/dev/null || true; wait "$$pid" 2>/dev/null || true; rm -f "$$log"' EXIT HUP INT TERM; \
+		i=0; until curl --fail --silent http://127.0.0.1:18080/healthz >/dev/null 2>&1; do \
+			i=$$((i + 1)); if [ "$$i" -ge 30 ]; then cat "$$log"; exit 1; fi; sleep 1; \
+		done; \
+		BASE_URL=http://127.0.0.1:18080 ./scripts/smoke.sh
+
+logs-delete: ## Delete observability resources and their stored logs
+	$(HELM) uninstall $(VICTORIA_LOGS_RELEASE) -n $(OBSERVABILITY_NAMESPACE) --ignore-not-found
+	$(KUBECTL) delete namespace $(OBSERVABILITY_NAMESPACE) --ignore-not-found
+
+hw3-up: ## Deploy the application, VictoriaLogs, and Vector from scratch
+	$(MAKE) k8s-up
+	$(MAKE) logs-deploy
+
+hw3-down: ## Delete the application and observability data, then stop Minikube
+	$(MAKE) k8s-delete
+	$(MAKE) logs-delete
+	$(MAKE) minikube-stop

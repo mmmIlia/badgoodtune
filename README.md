@@ -57,7 +57,7 @@ make compose-smoke  # проверить собранное приложение
 
 ## Minikube
 
-Нужны Minikube и совместимая с кластером версия `kubectl`.
+Нужны Minikube, Helm, kubeconform и совместимая с кластером версия `kubectl`.
 
 Полный запуск автоматизирован командой:
 
@@ -73,10 +73,10 @@ make k8s-open
 ```bash
 minikube start --driver=docker --container-runtime=docker --cpus=4 --memory=4096mb
 
-docker build -t badgoodtune-backend:hw2 .
-docker build -t badgoodtune-frontend:hw2 -f web/Dockerfile .
-minikube image load --daemon --overwrite badgoodtune-backend:hw2
-minikube image load --daemon --overwrite badgoodtune-frontend:hw2
+docker build -t badgoodtune-backend:local .
+docker build -t badgoodtune-frontend:local -f web/Dockerfile .
+minikube image load --daemon --overwrite badgoodtune-backend:local
+minikube image load --daemon --overwrite badgoodtune-frontend:local
 
 kubectl apply -f deploy/kubernetes/00-namespace
 kubectl apply -f deploy/kubernetes/10-configuration
@@ -105,3 +105,22 @@ kubectl get pods -n badgoodtune
 ```
 
 Описание предметной области, 12 факторов и Kubernetes-развёртывания находится в [`Отчёт.md`](Отчёт.md).
+
+## Логи в Minikube
+
+VictoriaLogs и Vector разворачиваются вместе с приложением:
+
+```bash
+make hw3-up
+make logs-status
+make logs-generate
+make logs-open
+```
+
+Последняя команда держит port-forward открытым. После неё vmui доступен на <http://127.0.0.1:9428/select/vmui/>. Выполнить LogsQL-запрос из терминала можно отдельно:
+
+```bash
+make logs-query LOGS_QUERY='_time:15m service.name:"badgoodtune-backend"'
+```
+
+`make hw3-down` удаляет оба учебных namespace вместе с данными PostgreSQL и VictoriaLogs, затем останавливает Minikube.

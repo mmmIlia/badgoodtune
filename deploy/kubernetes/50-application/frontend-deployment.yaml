@@ -30,7 +30,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: frontend
-          image: badgoodtune-frontend:hw2
+          image: badgoodtune-frontend:local
           imagePullPolicy: Never
           ports:
             - name: http

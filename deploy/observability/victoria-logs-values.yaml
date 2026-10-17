@@ -1,0 +1,70 @@
+server:
+  fullnameOverride: victoria-logs
+  retentionPeriod: 7d
+  retentionDiskSpaceUsage: 1GiB
+  persistentVolume:
+    enabled: true
+    storageClassName: standard
+    size: 2Gi
+  service:
+    clusterIP: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+vector:
+  enabled: true
+  role: Agent
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  customConfig:
+    data_dir: /vector-data-dir
+    api:
+      enabled: false
+    transforms:
+      application_logs:
+        type: filter
+        inputs:
+          - k8s
+        condition: .kubernetes.pod_namespace == "badgoodtune"
+      parser:
+        type: remap
+        inputs:
+          - application_logs
+        source: |
+          parsed, error = parse_json(.message)
+
+          del(.kubernetes.namespace_labels)
+          del(.kubernetes.node_labels)
+          del(.kubernetes.pod_annotations)
+
+          if error == null && is_object(parsed) {
+            . = merge!(., parsed)
+          } else {
+            .message = string!(.message)
+            if !exists(.timestamp) || is_null(.timestamp) { .timestamp = now() }
+            if !exists(.level) || is_null(.level) { .level = "info" }
+            if !exists(."service.name") || is_null(."service.name") {
+              ."service.name" = .kubernetes.container_name
+            }
+          }
+    sinks:
+      vlogs:
+        inputs:
+          - parser
+        request:
+          headers:
+            VL-Time-Field: timestamp
+            VL-Stream-Fields: kubernetes.pod_namespace,kubernetes.container_name,service.name
+            VL-Msg-Field: message
+            AccountID: "0"
+            ProjectID: "0"

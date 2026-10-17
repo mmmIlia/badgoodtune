@@ -12,9 +12,11 @@ import (
 	"github.com/mmmIlia/badgoodtune/internal/logging"
 )
 
+const serviceName = "badgoodtune-backend"
+
 func main() {
 	if err := run(); err != nil {
-		logging.New(os.Stdout, "info").Error("server failed", slog.String("error", err.Error()))
+		logging.New(os.Stdout, "info", serviceName).Error("server failed", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 }
@@ -24,7 +26,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	logger := logging.New(os.Stdout, settings.Logging.Level)
+	logger := logging.New(os.Stdout, settings.Logging.Level, serviceName)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	application, err := app.New(ctx, settings.Database, settings.Auth, settings.HTTP, logger)
