@@ -68,7 +68,7 @@ make k8s-status
 make k8s-open
 ```
 
-`make help` выводит все команды разработки и эксплуатации. Цели `k8s-images`, `k8s-load`, `k8s-validate` и `k8s-deploy` позволяют выполнить этапы запуска отдельно, а `make k8s-down` удаляет учебное окружение вместе с его данными. Ниже приведены соответствующие команды без автоматизации.
+`make help` выводит все команды разработки и эксплуатации. Цели `k8s-images`, `k8s-load`, `k8s-validate` и `k8s-deploy` позволяют выполнить этапы запуска отдельно, а `make k8s-down` удаляет локальное окружение вместе с его данными. Ниже приведены соответствующие команды без автоматизации.
 
 ```bash
 minikube start --driver=docker --container-runtime=docker --cpus=4 --memory=4096mb
@@ -111,7 +111,7 @@ kubectl get pods -n badgoodtune
 VictoriaLogs и Vector разворачиваются вместе с приложением:
 
 ```bash
-make hw3-up
+make stack-up
 make logs-status
 make logs-generate
 make logs-open
@@ -123,11 +123,11 @@ make logs-open
 make logs-query LOGS_QUERY='_time:15m service.name:"badgoodtune-backend"'
 ```
 
-`hw3-up` также разворачивает vmalert и Alertmanager. Проверить бонусный алерт можно командами:
+`stack-up` также разворачивает vmalert и Alertmanager. Проверить алерт можно командами:
 
 ```bash
 make alerts-trigger
 make alerts-open
 ```
 
-Первая команда создаёт тестовый трафик и дожидается состояния `firing`, вторая открывает vmalert UI на <http://127.0.0.1:8880/>. `make hw3-down` удаляет оба учебных namespace вместе с данными PostgreSQL и VictoriaLogs, затем останавливает Minikube.
+Первая команда создаёт тестовый трафик и дожидается состояния `firing`, вторая открывает vmalert UI на <http://127.0.0.1:8880/>. `make stack-down` удаляет оба namespace вместе с данными PostgreSQL и VictoriaLogs, затем останавливает Minikube.

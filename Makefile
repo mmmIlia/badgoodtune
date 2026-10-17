@@ -23,7 +23,7 @@ LOGS_QUERY ?= _time:15m
 LOGS_LIMIT ?= 20
 export LOGS_QUERY LOGS_LIMIT
 
-.PHONY: help check generate generate-check fmt fmt-check vet test integration-db test-integration test-integration-running web-install web-generate web-check build db-up db-down compose-up compose-down compose-smoke security-check minikube-start minikube-status minikube-stop k8s-images k8s-load k8s-validate k8s-deploy k8s-up k8s-down k8s-status k8s-scale-up k8s-scale-down k8s-open k8s-delete logs-validate logs-deploy logs-status logs-debug logs-open logs-query logs-delete logs-generate alerts-validate alerts-deploy alerts-status alerts-debug alerts-open alertmanager-open alerts-check alerts-trigger alerts-delete hw3-up hw3-down
+.PHONY: help check generate generate-check fmt fmt-check vet test integration-db test-integration test-integration-running web-install web-generate web-check build db-up db-down compose-up compose-down compose-smoke security-check minikube-start minikube-status minikube-stop k8s-images k8s-load k8s-validate k8s-deploy k8s-up k8s-down k8s-status k8s-scale-up k8s-scale-down k8s-open k8s-delete logs-validate logs-deploy logs-status logs-debug logs-open logs-query logs-delete logs-generate alerts-validate alerts-deploy alerts-status alerts-debug alerts-open alertmanager-open alerts-check alerts-trigger alerts-delete stack-up stack-down
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -283,12 +283,12 @@ alerts-trigger: logs-generate ## Generate warning logs and verify that the alert
 alerts-delete: ## Delete vmalert and Alertmanager resources
 	$(KUBECTL) delete -R -f $(ALERTING_DIR) --ignore-not-found
 
-hw3-up: ## Deploy the application, VictoriaLogs, and Vector from scratch
+stack-up: ## Deploy the application and the complete observability stack
 	$(MAKE) k8s-up
 	$(MAKE) logs-deploy
 	$(MAKE) alerts-deploy
 
-hw3-down: ## Delete the application and observability data, then stop Minikube
+stack-down: ## Delete the application and observability stack, then stop Minikube
 	$(MAKE) k8s-delete
 	$(MAKE) alerts-delete
 	$(MAKE) logs-delete

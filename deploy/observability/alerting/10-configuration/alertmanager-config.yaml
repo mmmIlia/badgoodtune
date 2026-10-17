@@ -13,7 +13,7 @@ data:
       resolve_timeout: 1m
 
     route:
-      receiver: homework-blackhole
+      receiver: discard
       group_by:
         - alertname
         - service
@@ -22,4 +22,4 @@ data:
       repeat_interval: 1h
 
     receivers:
-      - name: homework-blackhole
+      - name: discard
