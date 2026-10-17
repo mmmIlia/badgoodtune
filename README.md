@@ -57,7 +57,7 @@ make compose-smoke  # проверить собранное приложение
 
 ## Minikube
 
-Нужны Minikube, Helm, kubeconform и совместимая с кластером версия `kubectl`.
+Нужны Minikube, Helm, kubeconform, jq и совместимая с кластером версия `kubectl`.
 
 Полный запуск автоматизирован командой:
 
@@ -123,4 +123,11 @@ make logs-open
 make logs-query LOGS_QUERY='_time:15m service.name:"badgoodtune-backend"'
 ```
 
-`make hw3-down` удаляет оба учебных namespace вместе с данными PostgreSQL и VictoriaLogs, затем останавливает Minikube.
+`hw3-up` также разворачивает vmalert и Alertmanager. Проверить бонусный алерт можно командами:
+
+```bash
+make alerts-trigger
+make alerts-open
+```
+
+Первая команда создаёт тестовый трафик и дожидается состояния `firing`, вторая открывает vmalert UI на <http://127.0.0.1:8880/>. `make hw3-down` удаляет оба учебных namespace вместе с данными PostgreSQL и VictoriaLogs, затем останавливает Minikube.

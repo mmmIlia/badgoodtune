@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vmalert-rules
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: vmalert
+    app.kubernetes.io/component: alert-evaluator
+    app.kubernetes.io/part-of: badgoodtune-observability
+data:
+  badgoodtune.yaml: |
+    groups:
+      - name: badgoodtune-log-alerts
+        type: vlogs
+        interval: 15s
+        rules:
+          - alert: BadGoodTuneWarningLogs
+            expr: '_time:5m service.name:"badgoodtune-backend" level:warn | stats count() as warnings | filter warnings:>0'
+            labels:
+              severity: warning
+              service: badgoodtune-backend
+              environment: minikube
+            annotations:
+              summary: BadGoodTune backend emitted warning logs
+              description: 'The backend emitted {{ $value }} warning log entries during the last five minutes.'

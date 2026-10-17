@@ -17,11 +17,13 @@ VICTORIA_LOGS_CHART := oci://ghcr.io/victoriametrics/helm-charts/victoria-logs-s
 VICTORIA_LOGS_CHART_VERSION := 0.13.10
 VICTORIA_LOGS_VALUES := deploy/observability/victoria-logs-values.yaml
 OBSERVABILITY_TIMEOUT ?= 300s
+ALERTING_DIR := deploy/observability/alerting
+ALERTING_TIMEOUT ?= 180s
 LOGS_QUERY ?= _time:15m
 LOGS_LIMIT ?= 20
 export LOGS_QUERY LOGS_LIMIT
 
-.PHONY: help check generate generate-check fmt fmt-check vet test integration-db test-integration test-integration-running web-install web-generate web-check build db-up db-down compose-up compose-down compose-smoke security-check minikube-start minikube-status minikube-stop k8s-images k8s-load k8s-validate k8s-deploy k8s-up k8s-down k8s-status k8s-scale-up k8s-scale-down k8s-open k8s-delete logs-validate logs-deploy logs-status logs-debug logs-open logs-query logs-delete logs-generate hw3-up hw3-down
+.PHONY: help check generate generate-check fmt fmt-check vet test integration-db test-integration test-integration-running web-install web-generate web-check build db-up db-down compose-up compose-down compose-smoke security-check minikube-start minikube-status minikube-stop k8s-images k8s-load k8s-validate k8s-deploy k8s-up k8s-down k8s-status k8s-scale-up k8s-scale-down k8s-open k8s-delete logs-validate logs-deploy logs-status logs-debug logs-open logs-query logs-delete logs-generate alerts-validate alerts-deploy alerts-status alerts-debug alerts-open alertmanager-open alerts-check alerts-trigger alerts-delete hw3-up hw3-down
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-24s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -34,6 +36,7 @@ check: ## Run code generation, formatting, static analysis, tests, frontend chec
 	$(MAKE) web-check
 	$(MAKE) k8s-validate
 	$(MAKE) logs-validate
+	$(MAKE) alerts-validate
 
 generate: ## Regenerate Go and TypeScript code from OpenAPI and SQL
 	cd api && go tool oapi-codegen --config oapi-codegen.yaml openapi.yaml
@@ -224,11 +227,69 @@ logs-delete: ## Delete observability resources and their stored logs
 	$(HELM) uninstall $(VICTORIA_LOGS_RELEASE) -n $(OBSERVABILITY_NAMESPACE) --ignore-not-found
 	$(KUBECTL) delete namespace $(OBSERVABILITY_NAMESPACE) --ignore-not-found
 
+alerts-validate: ## Validate vmalert and Alertmanager manifests against strict schemas
+	kubeconform -strict -summary $(ALERTING_DIR)
+
+alerts-deploy: ## Deploy vmalert and Alertmanager, then wait for readiness
+	@set -eu; \
+		alertmanager_config_version=$$($(KUBECTL) get configmap/alertmanager-config -n $(OBSERVABILITY_NAMESPACE) -o jsonpath='{.metadata.resourceVersion}' 2>/dev/null || true); \
+		vmalert_rules_version=$$($(KUBECTL) get configmap/vmalert-rules -n $(OBSERVABILITY_NAMESPACE) -o jsonpath='{.metadata.resourceVersion}' 2>/dev/null || true); \
+		$(KUBECTL) get service/victoria-logs -n $(OBSERVABILITY_NAMESPACE) >/dev/null; \
+		$(KUBECTL) apply -f $(ALERTING_DIR)/10-configuration; \
+		new_alertmanager_config_version=$$($(KUBECTL) get configmap/alertmanager-config -n $(OBSERVABILITY_NAMESPACE) -o jsonpath='{.metadata.resourceVersion}'); \
+		new_vmalert_rules_version=$$($(KUBECTL) get configmap/vmalert-rules -n $(OBSERVABILITY_NAMESPACE) -o jsonpath='{.metadata.resourceVersion}'); \
+		$(KUBECTL) apply -f $(ALERTING_DIR)/20-services; \
+		$(KUBECTL) apply -f $(ALERTING_DIR)/30-workloads; \
+		if [ -n "$$alertmanager_config_version" ] && [ "$$alertmanager_config_version" != "$$new_alertmanager_config_version" ]; then \
+			$(KUBECTL) rollout restart deployment/alertmanager -n $(OBSERVABILITY_NAMESPACE); \
+		fi; \
+		if [ -n "$$vmalert_rules_version" ] && [ "$$vmalert_rules_version" != "$$new_vmalert_rules_version" ]; then \
+			$(KUBECTL) rollout restart deployment/vmalert -n $(OBSERVABILITY_NAMESPACE); \
+		fi; \
+		$(KUBECTL) rollout status deployment/alertmanager -n $(OBSERVABILITY_NAMESPACE) --timeout=$(ALERTING_TIMEOUT); \
+		$(KUBECTL) rollout status deployment/vmalert -n $(OBSERVABILITY_NAMESPACE) --timeout=$(ALERTING_TIMEOUT)
+
+alerts-status: ## Show vmalert and Alertmanager resources and readiness
+	$(KUBECTL) get pods,services,deployments,configmaps -n $(OBSERVABILITY_NAMESPACE) -l app.kubernetes.io/part-of=badgoodtune-observability
+	$(KUBECTL) rollout status deployment/alertmanager -n $(OBSERVABILITY_NAMESPACE) --timeout=10s
+	$(KUBECTL) rollout status deployment/vmalert -n $(OBSERVABILITY_NAMESPACE) --timeout=10s
+
+alerts-debug: ## Show recent vmalert and Alertmanager logs
+	$(KUBECTL) logs deployment/vmalert -n $(OBSERVABILITY_NAMESPACE) --tail=100 --prefix
+	$(KUBECTL) logs deployment/alertmanager -n $(OBSERVABILITY_NAMESPACE) --tail=100 --prefix
+
+alerts-open: ## Forward vmalert UI to http://127.0.0.1:8880/
+	$(KUBECTL) port-forward service/vmalert 8880:8880 -n $(OBSERVABILITY_NAMESPACE)
+
+alertmanager-open: ## Forward Alertmanager UI to http://127.0.0.1:9093/
+	$(KUBECTL) port-forward service/alertmanager 9093:9093 -n $(OBSERVABILITY_NAMESPACE)
+
+alerts-check: ## Wait until the BadGoodTune warning-log alert is firing
+	@set -eu; log=$$(mktemp); response=$$(mktemp); \
+		$(KUBECTL) port-forward service/vmalert 18880:8880 -n $(OBSERVABILITY_NAMESPACE) >"$$log" 2>&1 & pid=$$!; \
+		trap 'kill "$$pid" 2>/dev/null || true; wait "$$pid" 2>/dev/null || true; rm -f "$$log" "$$response"' EXIT HUP INT TERM; \
+		i=0; until curl --fail --silent http://127.0.0.1:18880/-/ready >/dev/null 2>&1; do \
+			i=$$((i + 1)); if [ "$$i" -ge 30 ]; then cat "$$log"; exit 1; fi; sleep 1; \
+		done; \
+		i=0; until curl --fail --silent http://127.0.0.1:18880/api/v1/alerts >"$$response" \
+			&& jq --exit-status 'any(.data.alerts[]?; .name == "BadGoodTuneWarningLogs" and .state == "firing")' "$$response" >/dev/null; do \
+			i=$$((i + 1)); if [ "$$i" -ge 45 ]; then cat "$$response"; exit 1; fi; sleep 2; \
+		done; \
+		cat "$$response"
+
+alerts-trigger: logs-generate ## Generate warning logs and verify that the alert fires
+	$(MAKE) alerts-check
+
+alerts-delete: ## Delete vmalert and Alertmanager resources
+	$(KUBECTL) delete -R -f $(ALERTING_DIR) --ignore-not-found
+
 hw3-up: ## Deploy the application, VictoriaLogs, and Vector from scratch
 	$(MAKE) k8s-up
 	$(MAKE) logs-deploy
+	$(MAKE) alerts-deploy
 
 hw3-down: ## Delete the application and observability data, then stop Minikube
 	$(MAKE) k8s-delete
+	$(MAKE) alerts-delete
 	$(MAKE) logs-delete
 	$(MAKE) minikube-stop
