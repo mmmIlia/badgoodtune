@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-exporter-bootstrap
+  namespace: badgoodtune
+  labels:
+    app.kubernetes.io/name: badgoodtune
+    app.kubernetes.io/component: postgres-exporter
+data:
+  monitor.sql: |
+    \getenv monitor_password POSTGRES_EXPORTER_PASSWORD
+    \getenv database POSTGRES_DB
+    BEGIN;
+    SELECT 'CREATE ROLE badgoodtune_monitor LOGIN'
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'badgoodtune_monitor')
+    \gexec
+    ALTER ROLE badgoodtune_monitor WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION CONNECTION LIMIT 3 PASSWORD :'monitor_password';
+    GRANT pg_monitor TO badgoodtune_monitor;
+    GRANT CONNECT ON DATABASE :"database" TO badgoodtune_monitor;
+    COMMIT;

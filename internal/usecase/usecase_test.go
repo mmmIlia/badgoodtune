@@ -18,20 +18,25 @@ type fixedClock struct{ now time.Time }
 func (c fixedClock) Now() time.Time { return c.now }
 
 type albumRepositoryFake struct {
-	album   domain.Album
-	rows    []domain.Album
-	query   usecase.AlbumListQuery
-	updated domain.AlbumDraft
-	deleted bool
+	createError error
+	album       domain.Album
+	rows        []domain.Album
+	query       usecase.AlbumListQuery
+	updated     domain.AlbumDraft
+	deleted     bool
 }
 
 type reviewRepositoryFake struct {
-	review  domain.Review
-	updated bool
-	deleted bool
+	createError error
+	review      domain.Review
+	updated     bool
+	deleted     bool
 }
 
 func (f *reviewRepositoryFake) CreateReview(_ context.Context, albumID, authorID domain.ID, draft domain.ReviewDraft, now time.Time) (domain.Review, error) {
+	if f.createError != nil {
+		return domain.Review{}, f.createError
+	}
 	return domain.Review{ID: "created", AlbumID: albumID, Author: domain.User{ID: authorID}, Headline: draft.Headline, Body: draft.Body, Score: draft.Score, Version: 1, CreatedAt: now, UpdatedAt: now}, nil
 }
 
@@ -61,6 +66,9 @@ func (f *reviewRepositoryFake) DeleteReview(_ context.Context, _, _ domain.ID, _
 }
 
 func (f *albumRepositoryFake) CreateAlbum(_ context.Context, ownerID domain.ID, draft domain.AlbumDraft, now time.Time) (domain.Album, error) {
+	if f.createError != nil {
+		return domain.Album{}, f.createError
+	}
 	return domain.Album{ID: "created", Owner: domain.User{ID: ownerID}, Artist: draft.Artist, Title: draft.Title, ReleaseYear: draft.ReleaseYear, Genre: draft.Genre, Version: 1, CreatedAt: now, UpdatedAt: now}, nil
 }
 
@@ -94,7 +102,7 @@ func TestAlbumServiceRejectsAnotherOwner(t *testing.T) {
 	repository := &albumRepositoryFake{album: domain.Album{
 		ID: "album", Owner: domain.User{ID: "owner"}, Artist: "Massive Attack", Title: "Mezzanine", ReleaseYear: 1998, Genre: "Trip hop", Version: 2,
 	}}
-	service, err := usecase.NewAlbumService(repository, fixedClock{now: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)})
+	service, err := usecase.NewAlbumService(repository, fixedClock{now: time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)}, &businessObserver{})
 	require.NoError(t, err)
 	artist := "Changed"
 
@@ -110,7 +118,7 @@ func TestAlbumServiceRejectsStaleVersion(t *testing.T) {
 	repository := &albumRepositoryFake{album: domain.Album{
 		ID: "album", Owner: domain.User{ID: "owner"}, Artist: "Burial", Title: "Untrue", ReleaseYear: 2007, Genre: "UK garage", Version: 4,
 	}}
-	service, err := usecase.NewAlbumService(repository, fixedClock{now: time.Now()})
+	service, err := usecase.NewAlbumService(repository, fixedClock{now: time.Now()}, &businessObserver{})
 	require.NoError(t, err)
 	title := "Changed"
 
@@ -128,7 +136,7 @@ func TestAlbumPaginationTokenIsBoundToFilters(t *testing.T) {
 		{ID: "2", CreatedAt: now.Add(-time.Hour)},
 		{ID: "1", CreatedAt: now.Add(-2 * time.Hour)},
 	}}
-	service, err := usecase.NewAlbumService(repository, fixedClock{now: now})
+	service, err := usecase.NewAlbumService(repository, fixedClock{now: now}, &businessObserver{})
 	require.NoError(t, err)
 
 	page, err := service.List(context.Background(), usecase.AlbumListRequest{PageSize: 2, Search: "portishead"})
@@ -146,7 +154,7 @@ func TestPageSizeIsCappedBeforeRepository(t *testing.T) {
 	t.Parallel()
 
 	repository := &albumRepositoryFake{}
-	service, err := usecase.NewAlbumService(repository, fixedClock{now: time.Now()})
+	service, err := usecase.NewAlbumService(repository, fixedClock{now: time.Now()}, &businessObserver{})
 	require.NoError(t, err)
 
 	_, err = service.List(context.Background(), usecase.AlbumListRequest{PageSize: 10_000})
@@ -159,7 +167,7 @@ func TestAlbumListRejectsFutureReleaseYear(t *testing.T) {
 
 	now := time.Date(2026, time.October, 2, 0, 0, 0, 0, time.UTC)
 	repository := &albumRepositoryFake{}
-	service, err := usecase.NewAlbumService(repository, fixedClock{now: now})
+	service, err := usecase.NewAlbumService(repository, fixedClock{now: now}, &businessObserver{})
 	require.NoError(t, err)
 	releaseYear := domain.LatestReleaseYear(now) + 1
 
@@ -178,7 +186,7 @@ func TestReviewServiceEnforcesOwnerAndVersion(t *testing.T) {
 		Body: "Detailed review", Score: 7, Version: 3,
 	}}
 	albums := &albumRepositoryFake{album: domain.Album{ID: "album", Owner: domain.User{ID: "owner"}}}
-	service, err := usecase.NewReviewService(reviews, albums, fixedClock{now: time.Now()})
+	service, err := usecase.NewReviewService(reviews, albums, fixedClock{now: time.Now()}, &businessObserver{})
 	require.NoError(t, err)
 	score := 8
 

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM golang:1.27.2-alpine AS go-builder
+FROM golang:1.27.3-alpine AS go-builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -8,6 +8,7 @@ COPY cmd/ ./cmd/
 COPY db/ ./db/
 COPY internal/ ./internal/
 RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server && \
     CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
 
@@ -18,5 +19,5 @@ RUN apk add --no-cache ca-certificates tzdata && \
 WORKDIR /app
 COPY --from=go-builder --chown=10001:10001 /out/server /out/migrate /app/
 USER 10001:10001
-EXPOSE 8080
+EXPOSE 8080 9090
 ENTRYPOINT ["/app/server"]

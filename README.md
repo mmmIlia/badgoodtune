@@ -45,6 +45,8 @@ internal/app                 сборка и запуск приложения
 
 ## Разработка
 
+Нужны Go из `go.mod` и Node.js 24 LTS из `.nvmrc`.
+
 ```bash
 make generate       # обновить код из OpenAPI и SQL
 make fmt-check      # проверить форматирование
@@ -52,6 +54,7 @@ make vet            # статический анализ Go
 make test           # модульные и HTTP-тесты
 make test-integration
 make web-check      # lint, typecheck, tests, build
+make web-check-container # lint, tests, build в закреплённом Node-контейнере
 make compose-smoke  # проверить собранное приложение
 ```
 
@@ -131,3 +134,32 @@ make alerts-open
 ```
 
 Первая команда создаёт тестовый трафик и дожидается состояния `firing`, вторая открывает vmalert UI на <http://127.0.0.1:8880/>. `make stack-down` удаляет оба namespace вместе с данными PostgreSQL и VictoriaLogs, затем останавливает Minikube.
+
+## Метрики
+
+`make stack-up` также устанавливает VictoriaMetrics и postgres-exporter. Для обновления уже работающего приложения:
+
+```bash
+make k8s-backend-reload
+make metrics-deploy
+make metrics-check
+make metrics-generate
+make metrics-open
+```
+
+VictoriaMetrics: <http://127.0.0.1:8428/vmui/>, цели сбора: <http://127.0.0.1:8428/targets>.
+Backend отдаёт Go, HTTP и бизнес-метрики на внутреннем `:9090/metrics`; postgres-exporter — на `:9187/metrics`.
+VictoriaMetrics находит каждый Pod по аннотациям, хранит данные на PVC и опрашивает цели каждые 15 секунд. Отдельный vmagent не используется.
+
+```bash
+make metrics-status
+make metrics-targets
+make metrics-query METRICS_QUERY='go_goroutines{job="badgoodtune-backend"}'
+make metrics-query METRICS_QUERY='pg_up{job="postgres"}'
+make metrics-query METRICS_QUERY='sum(rate(badgoodtune_reviews_created_total[5m]))'
+```
+
+`metrics-generate` сверяет значения до и после CRUD-сценария; запускать без параллельного трафика и перезапуска backend.
+`k8s-backend-reload` и `k8s-frontend-reload` позволяют обновлять компоненты независимо.
+`metrics-delete` удаляет workloads метрик, сохраняя PVC и роль мониторинга PostgreSQL.
+`logs-delete` удаляет только логирование. `stack-down` удаляет весь стек, включая данные всех PVC в его namespace.

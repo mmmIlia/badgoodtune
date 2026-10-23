@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-exporter
+  namespace: badgoodtune
+  labels:
+    app.kubernetes.io/name: badgoodtune
+    app.kubernetes.io/component: postgres-exporter
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  progressDeadlineSeconds: 120
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: badgoodtune
+      app.kubernetes.io/component: postgres-exporter
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"
+        prometheus.io/path: /metrics
+      labels:
+        app.kubernetes.io/name: badgoodtune
+        app.kubernetes.io/component: postgres-exporter
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres-exporter
+          image: prometheuscommunity/postgres-exporter:v0.20.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - --log.format=json
+            - --config.file=/etc/postgres-exporter/exporter.yaml
+            - --collection-timeout=3s
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: badgoodtune-config
+                  key: POSTGRES_DB
+            - name: DATA_SOURCE_URI
+              value: postgres:5432/$(POSTGRES_DB)?sslmode=disable
+            - name: DATA_SOURCE_USER
+              value: badgoodtune_monitor
+            - name: DATA_SOURCE_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-exporter-secret
+                  key: POSTGRES_EXPORTER_PASSWORD
+          ports:
+            - name: metrics
+              containerPort: 9187
+          volumeMounts:
+            - name: configuration
+              mountPath: /etc/postgres-exporter
+              readOnly: true
+          startupProbe:
+            httpGet:
+              path: /
+              port: metrics
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: metrics
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /
+              port: metrics
+            periodSeconds: 10
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 10m
+              memory: 24Mi
+            limits:
+              cpu: 100m
+              memory: 96Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: configuration
+          configMap:
+            name: postgres-exporter-config

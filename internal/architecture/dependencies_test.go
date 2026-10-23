@@ -30,6 +30,7 @@ func TestLayerDependencies(t *testing.T) {
 		{directory: "config", allowThirdParty: true},
 		{directory: "logging"},
 		{directory: "security", allowThirdParty: true},
+		{directory: "metrics", localImports: []string{"internal/domain", "internal/usecase"}, allowThirdParty: true},
 		{
 			directory:       filepath.Join("repository", "postgres"),
 			localImports:    []string{"db/migrations", "internal/domain", "internal/usecase", "internal/repository/postgres/sqlc"},

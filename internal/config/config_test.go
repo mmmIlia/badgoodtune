@@ -13,6 +13,7 @@ import (
 func TestLoadPopulatesNestedSections(t *testing.T) {
 	t.Setenv("APP_ENV", "test")
 	t.Setenv("HTTP_ADDRESS", ":9090")
+	t.Setenv("METRICS_ADDRESS", ":9091")
 	t.Setenv("DATABASE_URL", "postgres://example")
 	t.Setenv("COOKIE_NAME", "test_session")
 	t.Setenv("LOG_LEVEL", "debug")
@@ -21,6 +22,7 @@ func TestLoadPopulatesNestedSections(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "test", settings.App.Environment)
 	assert.Equal(t, ":9090", settings.HTTP.Address)
+	assert.Equal(t, ":9091", settings.Metrics.Address)
 	assert.Equal(t, "postgres://example", settings.Database.Connection.URL)
 	assert.Equal(t, "test_session", settings.Auth.CookieName)
 	assert.Equal(t, "debug", settings.Logging.Level)
@@ -56,6 +58,7 @@ func TestProductionConfigRequiresSecureHostCookie(t *testing.T) {
 			Argon2MaxConcurrent: 1,
 		},
 		Logging: config.Logging{Level: "info"},
+		Metrics: config.Metrics{Address: ":9090", ReadHeaderTimeout: time.Second, WriteTimeout: time.Second, IdleTimeout: time.Second},
 	}
 
 	err := settings.Validate()

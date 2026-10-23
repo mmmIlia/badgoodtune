@@ -164,10 +164,11 @@ func TestRequestLogLevel(t *testing.T) {
 }
 
 type testDependencies struct {
-	auth    AuthUseCases
-	albums  AlbumUseCases
-	reviews ReviewUseCases
-	probe   ReadinessProbe
+	auth     AuthUseCases
+	albums   AlbumUseCases
+	reviews  ReviewUseCases
+	probe    ReadinessProbe
+	observer HTTPObserver
 }
 
 func newTestHandler(t *testing.T, custom testDependencies) http.Handler {
@@ -184,12 +185,16 @@ func newTestHandler(t *testing.T, custom testDependencies) http.Handler {
 	if custom.probe == nil {
 		custom.probe = probeStub{}
 	}
+	if custom.observer == nil {
+		custom.observer = &httpObserverStub{}
+	}
 	handler, err := NewHandler(Dependencies{
-		Auth:    custom.auth,
-		Albums:  custom.albums,
-		Reviews: custom.reviews,
-		Probe:   custom.probe,
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Auth:     custom.auth,
+		Albums:   custom.albums,
+		Reviews:  custom.reviews,
+		Probe:    custom.probe,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Observer: custom.observer,
 	}, Options{
 		CookieName:       "test_session",
 		ReadinessTimeout: time.Second,

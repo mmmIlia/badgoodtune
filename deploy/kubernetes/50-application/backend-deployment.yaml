@@ -21,10 +21,15 @@ spec:
       app.kubernetes.io/component: backend
   template:
     metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: /metrics
       labels:
         app.kubernetes.io/name: badgoodtune
         app.kubernetes.io/component: backend
     spec:
+      automountServiceAccountToken: false
       securityContext:
         seccompProfile:
           type: RuntimeDefault
@@ -35,6 +40,8 @@ spec:
           ports:
             - name: http
               containerPort: 8080
+            - name: metrics
+              containerPort: 9090
           envFrom:
             - configMapRef:
                 name: badgoodtune-config

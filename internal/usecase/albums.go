@@ -11,16 +11,20 @@ import (
 type AlbumService struct {
 	repository AlbumRepository
 	clock      Clock
+	observer   AlbumObserver
 }
 
-func NewAlbumService(repository AlbumRepository, clock Clock) (*AlbumService, error) {
+func NewAlbumService(repository AlbumRepository, clock Clock, observer AlbumObserver) (*AlbumService, error) {
+	if observer == nil {
+		return nil, errors.New("album observer is required")
+	}
 	if repository == nil {
 		return nil, errors.New("album repository is required")
 	}
 	if clock == nil {
 		return nil, errors.New("clock is required")
 	}
-	return &AlbumService{repository: repository, clock: clock}, nil
+	return &AlbumService{repository: repository, clock: clock, observer: observer}, nil
 }
 
 func (s *AlbumService) Create(ctx context.Context, actorID domain.ID, input domain.AlbumDraft) (domain.Album, error) {
@@ -36,6 +40,7 @@ func (s *AlbumService) Create(ctx context.Context, actorID domain.ID, input doma
 	if err != nil {
 		return domain.Album{}, fmt.Errorf("create album: %w", err)
 	}
+	s.observer.AlbumCreated()
 	return album, nil
 }
 

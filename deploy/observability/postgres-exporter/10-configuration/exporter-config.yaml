@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-exporter-config
+  namespace: badgoodtune
+  labels:
+    app.kubernetes.io/name: badgoodtune
+    app.kubernetes.io/component: postgres-exporter
+data:
+  exporter.yaml: |
+    auth_modules: {}

@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mmmIlia/badgoodtune/internal/config"
+	"github.com/mmmIlia/badgoodtune/internal/metrics"
 	httpapi "github.com/mmmIlia/badgoodtune/internal/transport/http"
 )
 
@@ -18,6 +18,7 @@ const maxHeaderBytes = 1 << 20
 
 type App struct {
 	server          *http.Server
+	metricsServer   *http.Server
 	database        *pgxpool.Pool
 	logger          *slog.Logger
 	shutdownTimeout time.Duration
@@ -28,6 +29,7 @@ func New(
 	databaseConfig config.Database,
 	authConfig config.Auth,
 	httpConfig config.HTTP,
+	metricsConfig config.Metrics,
 	logger *slog.Logger,
 ) (*App, error) {
 	if logger == nil {
@@ -39,11 +41,12 @@ func New(
 		return nil, err
 	}
 
+	observations := metrics.New()
 	handler, err := buildHandler(authConfig, httpapi.Options{
 		CookieName:       authConfig.CookieName,
 		CookieSecure:     authConfig.CookieSecure,
 		ReadinessTimeout: httpConfig.ReadinessTimeout,
-	}, database, logger)
+	}, database, logger, observations)
 	if err != nil {
 		database.Close()
 		return nil, err
@@ -61,7 +64,17 @@ func New(
 	}
 
 	return &App{
-		server:          server,
+		server: server,
+		metricsServer: &http.Server{
+			Addr:              metricsConfig.Address,
+			Handler:           observations.Handler(),
+			ReadHeaderTimeout: metricsConfig.ReadHeaderTimeout,
+			ReadTimeout:       metricsConfig.ReadHeaderTimeout,
+			WriteTimeout:      metricsConfig.WriteTimeout,
+			IdleTimeout:       metricsConfig.IdleTimeout,
+			MaxHeaderBytes:    maxHeaderBytes,
+			ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
+		},
 		database:        database,
 		logger:          logger,
 		shutdownTimeout: httpConfig.ShutdownTimeout,
@@ -71,31 +84,6 @@ func New(
 func (a *App) Run(ctx context.Context) error {
 	defer a.database.Close()
 
-	listenError := make(chan error, 1)
-	go func() {
-		a.logger.Info("HTTP server starting", slog.String("address", a.server.Addr))
-		listenError <- a.server.ListenAndServe()
-	}()
-
-	select {
-	case err := <-listenError:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return fmt.Errorf("serve HTTP: %w", err)
-	case <-ctx.Done():
-		a.logger.Info("shutdown requested")
-	}
-
-	shutdownContext, cancel := context.WithTimeout(context.Background(), a.shutdownTimeout)
-	defer cancel()
-	if err := a.server.Shutdown(shutdownContext); err != nil {
-		_ = a.server.Close()
-		return fmt.Errorf("graceful HTTP shutdown: %w", err)
-	}
-	if err := <-listenError; err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("serve HTTP during shutdown: %w", err)
-	}
-	a.logger.Info("HTTP server stopped")
-	return nil
+	a.logger.Info("HTTP servers starting", slog.String("api", a.server.Addr), slog.String("metrics", a.metricsServer.Addr))
+	return runHTTPServers(ctx, a.shutdownTimeout, a.server, a.metricsServer)
 }

@@ -29,7 +29,7 @@ func run() error {
 	logger := logging.New(os.Stdout, settings.Logging.Level, serviceName)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	application, err := app.New(ctx, settings.Database, settings.Auth, settings.HTTP, logger)
+	application, err := app.New(ctx, settings.Database, settings.Auth, settings.HTTP, settings.Metrics, logger)
 	if err != nil {
 		return err
 	}

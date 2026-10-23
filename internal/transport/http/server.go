@@ -17,6 +17,7 @@ type Server struct {
 	reviews          ReviewUseCases
 	probe            ReadinessProbe
 	logger           *slog.Logger
+	observer         HTTPObserver
 	cookieName       string
 	cookieSecure     bool
 	readinessTimeout time.Duration
@@ -28,6 +29,9 @@ func NewHandler(deps Dependencies, options Options) (http.Handler, error) {
 	}
 	if deps.Logger == nil {
 		return nil, errors.New("HTTP API logger is required")
+	}
+	if deps.Observer == nil {
+		return nil, errors.New("HTTP observer is required")
 	}
 	if options.CookieName == "" {
 		return nil, errors.New("HTTP API cookie name is required")
@@ -42,6 +46,7 @@ func NewHandler(deps Dependencies, options Options) (http.Handler, error) {
 		reviews:          deps.Reviews,
 		probe:            deps.Probe,
 		logger:           deps.Logger,
+		observer:         deps.Observer,
 		cookieName:       options.CookieName,
 		cookieSecure:     options.CookieSecure,
 		readinessTimeout: options.ReadinessTimeout,

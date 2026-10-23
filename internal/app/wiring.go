@@ -9,6 +9,7 @@ import (
 
 	"github.com/mmmIlia/badgoodtune/internal/clock"
 	"github.com/mmmIlia/badgoodtune/internal/config"
+	"github.com/mmmIlia/badgoodtune/internal/metrics"
 	"github.com/mmmIlia/badgoodtune/internal/repository/postgres"
 	"github.com/mmmIlia/badgoodtune/internal/security"
 	httpapi "github.com/mmmIlia/badgoodtune/internal/transport/http"
@@ -20,6 +21,7 @@ func buildHandler(
 	httpOptions httpapi.Options,
 	database *pgxpool.Pool,
 	logger *slog.Logger,
+	observer *metrics.Metrics,
 ) (http.Handler, error) {
 	store, err := postgres.NewStore(database)
 	if err != nil {
@@ -31,25 +33,26 @@ func buildHandler(
 	}
 
 	systemClock := clock.System{}
-	auth, err := usecase.NewAuthService(store, passwords, security.SessionTokenSource{}, systemClock, authConfig.SessionTTL)
+	auth, err := usecase.NewAuthService(store, passwords, security.SessionTokenSource{}, systemClock, authConfig.SessionTTL, observer)
 	if err != nil {
 		return nil, fmt.Errorf("create authentication service: %w", err)
 	}
-	albums, err := usecase.NewAlbumService(store, systemClock)
+	albums, err := usecase.NewAlbumService(store, systemClock, observer)
 	if err != nil {
 		return nil, fmt.Errorf("create album service: %w", err)
 	}
-	reviews, err := usecase.NewReviewService(store, store, systemClock)
+	reviews, err := usecase.NewReviewService(store, store, systemClock, observer)
 	if err != nil {
 		return nil, fmt.Errorf("create review service: %w", err)
 	}
 
 	handler, err := httpapi.NewHandler(httpapi.Dependencies{
-		Auth:    auth,
-		Albums:  albums,
-		Reviews: reviews,
-		Probe:   store,
-		Logger:  logger,
+		Auth:     auth,
+		Albums:   albums,
+		Reviews:  reviews,
+		Probe:    store,
+		Logger:   logger,
+		Observer: observer,
 	}, httpOptions)
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP handler: %w", err)

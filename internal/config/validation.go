@@ -20,6 +20,10 @@ const (
 func (c Config) Validate() error {
 	problems := c.App.problems()
 	problems = append(problems, c.HTTP.problems()...)
+	problems = append(problems, c.Metrics.problems()...)
+	if c.HTTP.Address == c.Metrics.Address {
+		problems = append(problems, "HTTP_ADDRESS and METRICS_ADDRESS must differ")
+	}
 	problems = append(problems, c.Database.problems()...)
 	problems = append(problems, c.Auth.problems(c.App.Environment)...)
 	problems = append(problems, c.Logging.problems()...)

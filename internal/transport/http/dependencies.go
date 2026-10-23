@@ -37,11 +37,17 @@ type ReadinessProbe interface {
 }
 
 type Dependencies struct {
-	Auth    AuthUseCases
-	Albums  AlbumUseCases
-	Reviews ReviewUseCases
-	Probe   ReadinessProbe
-	Logger  *slog.Logger
+	Auth     AuthUseCases
+	Albums   AlbumUseCases
+	Reviews  ReviewUseCases
+	Probe    ReadinessProbe
+	Logger   *slog.Logger
+	Observer HTTPObserver
+}
+
+type HTTPObserver interface {
+	RequestStarted()
+	RequestCompleted(operation string, status int, duration time.Duration)
 }
 
 type Options struct {

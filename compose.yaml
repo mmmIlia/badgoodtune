@@ -44,6 +44,10 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
       HTTP_ADDRESS: :8080
+      METRICS_ADDRESS: ${METRICS_ADDRESS:-:9090}
+      METRICS_READ_HEADER_TIMEOUT: ${METRICS_READ_HEADER_TIMEOUT:-5s}
+      METRICS_WRITE_TIMEOUT: ${METRICS_WRITE_TIMEOUT:-10s}
+      METRICS_IDLE_TIMEOUT: ${METRICS_IDLE_TIMEOUT:-30s}
       DATABASE_URL: ${DATABASE_URL:-postgres://badgoodtune:badgoodtune@postgres:5432/badgoodtune?sslmode=disable}
       COOKIE_NAME: ${COOKIE_NAME:-badgoodtune_session}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}

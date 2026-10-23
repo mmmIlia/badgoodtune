@@ -10,6 +10,7 @@ import (
 type Config struct {
 	App      App
 	HTTP     HTTP
+	Metrics  Metrics
 	Database Database
 	Auth     Auth
 	Logging  Logging

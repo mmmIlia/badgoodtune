@@ -64,6 +64,10 @@ func (s *Server) requestID(next http.Handler) http.Handler {
 func (s *Server) accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
+		observe := !strings.HasPrefix(r.URL.Path, "/health/")
+		if observe {
+			s.observer.RequestStarted()
+		}
 		recorder := &responseRecorder{ResponseWriter: w}
 		next.ServeHTTP(recorder, r)
 		status := recorder.status
@@ -71,6 +75,9 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 		level := requestLogLevel(r.URL.Path, status)
+		if observe {
+			s.observer.RequestCompleted(requestOperation(recorder, r), status, time.Since(started))
+		}
 		s.logger.LogAttrs(r.Context(), level, "HTTP request",
 			slog.String("request_id", requestIDFromContext(r.Context())),
 			slog.String("method", r.Method),

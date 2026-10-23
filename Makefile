@@ -21,7 +21,16 @@ ALERTING_DIR := deploy/observability/alerting
 ALERTING_TIMEOUT ?= 180s
 LOGS_QUERY ?= _time:15m
 LOGS_LIMIT ?= 20
+VICTORIA_METRICS_RELEASE ?= victoria-metrics
+VICTORIA_METRICS_CHART := oci://ghcr.io/victoriametrics/helm-charts/victoria-metrics-single
+VICTORIA_METRICS_CHART_VERSION := 0.49.0
+VICTORIA_METRICS_VALUES := deploy/observability/victoria-metrics-values.yaml
+POSTGRES_EXPORTER_DIR := deploy/observability/postgres-exporter
+METRICS_QUERY ?= up{namespace="badgoodtune"}
 export LOGS_QUERY LOGS_LIMIT
+export METRICS_QUERY KUBECTL K8S_NAMESPACE
+
+.PHONY: web-check-container k8s-backend-reload k8s-frontend-reload metrics-deploy metrics-status metrics-open metrics-query metrics-targets metrics-check metrics-generate metrics-validate metrics-debug metrics-delete
 
 .PHONY: help check generate generate-check fmt fmt-check vet test integration-db test-integration test-integration-running web-install web-generate web-check build db-up db-down compose-up compose-down compose-smoke security-check minikube-start minikube-status minikube-stop k8s-images k8s-load k8s-validate k8s-deploy k8s-up k8s-down k8s-status k8s-scale-up k8s-scale-down k8s-open k8s-delete logs-validate logs-deploy logs-status logs-debug logs-open logs-query logs-delete logs-generate alerts-validate alerts-deploy alerts-status alerts-debug alerts-open alertmanager-open alerts-check alerts-trigger alerts-delete stack-up stack-down
 
@@ -37,6 +46,7 @@ check: ## Run code generation, formatting, static analysis, tests, frontend chec
 	$(MAKE) k8s-validate
 	$(MAKE) logs-validate
 	$(MAKE) alerts-validate
+	$(MAKE) metrics-validate
 
 generate: ## Regenerate Go and TypeScript code from OpenAPI and SQL
 	cd api && go tool oapi-codegen --config oapi-codegen.yaml openapi.yaml
@@ -79,6 +89,10 @@ web-generate: ## Regenerate the TypeScript API client
 
 web-check: ## Run frontend formatting, lint, typecheck, tests, and build
 	cd web && npm run check
+
+web-check-container: ## Check the frontend using the pinned Node runtime in Docker
+	docker build --target builder -t $(FRONTEND_IMAGE)-check -f web/Dockerfile .
+	docker run --rm --network=none $(FRONTEND_IMAGE)-check sh -ec 'node --version; npm run format:check; npm run lint; npm run test; npm run build'
 
 build: ## Build backend binaries into bin/
 	mkdir -p bin
@@ -134,6 +148,7 @@ k8s-deploy: ## Apply manifests in dependency order and wait for readiness
 	$(KUBECTL) wait --for=condition=complete job/badgoodtune-migration -n $(K8S_NAMESPACE) --timeout=$(K8S_JOB_TIMEOUT)
 	$(KUBECTL) apply -f $(K8S_DIR)/40-services
 	$(KUBECTL) apply -f $(K8S_DIR)/50-application
+	$(KUBECTL) rollout restart deployment/badgoodtune-backend deployment/badgoodtune-frontend -n $(K8S_NAMESPACE)
 	$(KUBECTL) rollout status deployment/badgoodtune-backend -n $(K8S_NAMESPACE) --timeout=$(K8S_ROLLOUT_TIMEOUT)
 	$(KUBECTL) rollout status deployment/badgoodtune-frontend -n $(K8S_NAMESPACE) --timeout=$(K8S_ROLLOUT_TIMEOUT)
 
@@ -223,9 +238,9 @@ logs-generate: ## Run the CRUD smoke test through Kubernetes to generate applica
 		done; \
 		BASE_URL=http://127.0.0.1:18080 ./scripts/smoke.sh
 
-logs-delete: ## Delete observability resources and their stored logs
+logs-delete: ## Delete VictoriaLogs and Vector with their stored logs
 	$(HELM) uninstall $(VICTORIA_LOGS_RELEASE) -n $(OBSERVABILITY_NAMESPACE) --ignore-not-found
-	$(KUBECTL) delete namespace $(OBSERVABILITY_NAMESPACE) --ignore-not-found
+	$(KUBECTL) delete persistentvolumeclaims -n $(OBSERVABILITY_NAMESPACE) -l app.kubernetes.io/instance=$(VICTORIA_LOGS_RELEASE)
 
 alerts-validate: ## Validate vmalert and Alertmanager manifests against strict schemas
 	kubeconform -strict -summary $(ALERTING_DIR)
@@ -287,9 +302,87 @@ stack-up: ## Deploy the application and the complete observability stack
 	$(MAKE) k8s-up
 	$(MAKE) logs-deploy
 	$(MAKE) alerts-deploy
+	$(MAKE) metrics-deploy
 
 stack-down: ## Delete the application and observability stack, then stop Minikube
+	$(MAKE) metrics-delete
 	$(MAKE) k8s-delete
 	$(MAKE) alerts-delete
 	$(MAKE) logs-delete
+	$(KUBECTL) delete namespace $(OBSERVABILITY_NAMESPACE) --ignore-not-found
 	$(MAKE) minikube-stop
+
+k8s-backend-reload: ## Rebuild, load, and restart only the backend using the local image tag
+	docker build -t $(BACKEND_IMAGE) .
+	$(MINIKUBE) image load --daemon --overwrite $(BACKEND_IMAGE)
+	$(KUBECTL) apply -f $(K8S_DIR)/10-configuration
+	$(KUBECTL) apply -f $(K8S_DIR)/50-application/backend-deployment.yaml
+	$(KUBECTL) rollout restart deployment/badgoodtune-backend -n $(K8S_NAMESPACE)
+	$(KUBECTL) rollout status deployment/badgoodtune-backend -n $(K8S_NAMESPACE) --timeout=$(K8S_ROLLOUT_TIMEOUT)
+
+k8s-frontend-reload: ## Rebuild, load, and restart only the frontend using the local image tag
+	docker build -t $(FRONTEND_IMAGE) -f web/Dockerfile .
+	$(MINIKUBE) image load --daemon --overwrite $(FRONTEND_IMAGE)
+	$(KUBECTL) apply -f $(K8S_DIR)/50-application/frontend-deployment.yaml
+	$(KUBECTL) rollout restart deployment/badgoodtune-frontend -n $(K8S_NAMESPACE)
+	$(KUBECTL) rollout status deployment/badgoodtune-frontend -n $(K8S_NAMESPACE) --timeout=$(K8S_ROLLOUT_TIMEOUT)
+
+metrics-validate: ## Render and validate VictoriaMetrics and PostgreSQL exporter manifests
+	@set -eu; directory=$$(mktemp -d); manifest="$$directory/rendered.yaml"; \
+		trap 'rm -f "$$manifest"; rmdir "$$directory"' EXIT HUP INT TERM; \
+		$(HELM) template $(VICTORIA_METRICS_RELEASE) $(VICTORIA_METRICS_CHART) \
+			--version $(VICTORIA_METRICS_CHART_VERSION) --namespace $(OBSERVABILITY_NAMESPACE) \
+			--values $(VICTORIA_METRICS_VALUES) >"$$manifest"; \
+		test -s "$$manifest"; \
+		grep -q '^kind:' "$$manifest"; \
+		kubeconform -strict -summary "$$manifest"; \
+		kubeconform -strict -summary $(POSTGRES_EXPORTER_DIR)
+
+metrics-deploy: ## Bootstrap the PostgreSQL monitoring role and install exporters and VictoriaMetrics
+	$(KUBECTL) rollout status statefulset/postgres -n $(K8S_NAMESPACE) --timeout=$(K8S_ROLLOUT_TIMEOUT)
+	@set -eu; \
+		previous=$$($(KUBECTL) get secret/postgres-exporter-secret configmap/postgres-exporter-config -n $(K8S_NAMESPACE) -o json 2>/dev/null | jq -c '[.items[].data]' || true); \
+		$(KUBECTL) apply -f $(POSTGRES_EXPORTER_DIR)/10-configuration; \
+		current=$$($(KUBECTL) get secret/postgres-exporter-secret configmap/postgres-exporter-config -n $(K8S_NAMESPACE) -o json | jq -c '[.items[].data]'); \
+		$(KUBECTL) delete job/postgres-exporter-bootstrap -n $(K8S_NAMESPACE) --ignore-not-found; \
+		$(KUBECTL) apply -f $(POSTGRES_EXPORTER_DIR)/20-bootstrap; \
+		if ! $(KUBECTL) wait --for=condition=complete job/postgres-exporter-bootstrap -n $(K8S_NAMESPACE) --timeout=$(K8S_JOB_TIMEOUT); then \
+			$(KUBECTL) logs job/postgres-exporter-bootstrap -n $(K8S_NAMESPACE); exit 1; \
+		fi; \
+		$(KUBECTL) apply -f $(POSTGRES_EXPORTER_DIR)/30-workloads; \
+		if [ -n "$$previous" ] && [ "$$previous" != "$$current" ]; then \
+			$(KUBECTL) rollout restart deployment/postgres-exporter -n $(K8S_NAMESPACE); \
+		fi; \
+		$(KUBECTL) rollout status deployment/postgres-exporter -n $(K8S_NAMESPACE) --timeout=$(K8S_ROLLOUT_TIMEOUT)
+	$(HELM) upgrade --install $(VICTORIA_METRICS_RELEASE) $(VICTORIA_METRICS_CHART) \
+		--version $(VICTORIA_METRICS_CHART_VERSION) --namespace $(OBSERVABILITY_NAMESPACE) \
+		--create-namespace --values $(VICTORIA_METRICS_VALUES) --wait --timeout $(OBSERVABILITY_TIMEOUT)
+
+metrics-status: ## Show VictoriaMetrics, PostgreSQL exporter, and persistent storage
+	$(KUBECTL) get pods,services,statefulsets,persistentvolumeclaims -n $(OBSERVABILITY_NAMESPACE) -l app.kubernetes.io/instance=$(VICTORIA_METRICS_RELEASE)
+	$(KUBECTL) get pods,deployments,jobs -n $(K8S_NAMESPACE) -l app.kubernetes.io/component=postgres-exporter
+
+metrics-open: ## Forward VictoriaMetrics API, /targets, and /vmui/ to http://127.0.0.1:8428/
+	$(KUBECTL) port-forward --address=127.0.0.1 service/victoria-metrics 8428:8428 -n $(OBSERVABILITY_NAMESPACE)
+
+metrics-query: ## Query stored metrics using METRICS_QUERY
+	@./scripts/port-forward.sh $(OBSERVABILITY_NAMESPACE) service/victoria-metrics 18428:8428 \
+		curl --fail --silent --show-error --max-time 15 --get --data-urlencode "query=$$METRICS_QUERY" http://127.0.0.1:18428/api/v1/query
+
+metrics-check: ## Verify discovery, runtime and business metrics, and PostgreSQL health in the TSDB
+	@./scripts/port-forward.sh $(OBSERVABILITY_NAMESPACE) service/victoria-metrics 18428:8428 ./scripts/check-metrics.sh
+
+metrics-targets: ## Show discovered scrape targets and their current health
+	@./scripts/port-forward.sh $(OBSERVABILITY_NAMESPACE) service/victoria-metrics 18428:8428 \
+		sh -ec 'curl --fail --silent --show-error --max-time 15 http://127.0.0.1:18428/api/v1/targets | jq --exit-status ".data.activeTargets | map({job: .labels.job, pod: .labels.pod, health: .health, endpoint: .scrapeUrl, error: .lastError})"'
+
+metrics-generate: ## Run controlled CRUD traffic and verify exact business metric changes in the TSDB
+	@./scripts/port-forward.sh $(OBSERVABILITY_NAMESPACE) service/victoria-metrics 18428:8428 ./scripts/generate-metrics.sh
+
+metrics-debug: ## Show recent VictoriaMetrics and PostgreSQL exporter logs
+	$(KUBECTL) logs statefulset/victoria-metrics -n $(OBSERVABILITY_NAMESPACE) --tail=100 --prefix
+	$(KUBECTL) logs deployment/postgres-exporter -n $(K8S_NAMESPACE) --tail=100 --prefix
+
+metrics-delete: ## Uninstall metrics workloads; retain TSDB PVC and the PostgreSQL monitoring role
+	$(HELM) uninstall $(VICTORIA_METRICS_RELEASE) -n $(OBSERVABILITY_NAMESPACE) --ignore-not-found
+	$(KUBECTL) delete -R -f $(POSTGRES_EXPORTER_DIR) --ignore-not-found

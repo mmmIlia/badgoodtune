@@ -21,6 +21,7 @@ type AuthService struct {
 	tokens     SessionTokenSource
 	clock      Clock
 	sessionTTL time.Duration
+	observer   AuthObserver
 }
 
 func NewAuthService(
@@ -29,7 +30,11 @@ func NewAuthService(
 	tokens SessionTokenSource,
 	clock Clock,
 	sessionTTL time.Duration,
+	observer AuthObserver,
 ) (*AuthService, error) {
+	if observer == nil {
+		return nil, errors.New("auth observer is required")
+	}
 	if repository == nil {
 		return nil, errors.New("auth repository is required")
 	}
@@ -52,6 +57,7 @@ func NewAuthService(
 		tokens:     tokens,
 		clock:      clock,
 		sessionTTL: sessionTTL,
+		observer:   observer,
 	}, nil
 }
 
@@ -74,6 +80,7 @@ func (s *AuthService) Register(ctx context.Context, username, password string) (
 		return Session{}, fmt.Errorf("create user and session: %w", err)
 	}
 
+	s.observer.UserRegistered()
 	return Session{User: user, ExpiresAt: session.ExpiresAt, PlainToken: plainToken}, nil
 }
 
@@ -110,6 +117,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (Ses
 		return Session{}, fmt.Errorf("create session: %w", err)
 	}
 
+	s.observer.LoginSucceeded()
 	return Session{User: credential.User, ExpiresAt: session.ExpiresAt, PlainToken: plainToken}, nil
 }
 

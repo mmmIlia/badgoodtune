@@ -12,9 +12,13 @@ type ReviewService struct {
 	repository ReviewRepository
 	albums     AlbumReader
 	clock      Clock
+	observer   ReviewObserver
 }
 
-func NewReviewService(repository ReviewRepository, albums AlbumReader, clock Clock) (*ReviewService, error) {
+func NewReviewService(repository ReviewRepository, albums AlbumReader, clock Clock, observer ReviewObserver) (*ReviewService, error) {
+	if observer == nil {
+		return nil, errors.New("review observer is required")
+	}
 	if repository == nil {
 		return nil, errors.New("review repository is required")
 	}
@@ -24,7 +28,7 @@ func NewReviewService(repository ReviewRepository, albums AlbumReader, clock Clo
 	if clock == nil {
 		return nil, errors.New("clock is required")
 	}
-	return &ReviewService{repository: repository, albums: albums, clock: clock}, nil
+	return &ReviewService{repository: repository, albums: albums, clock: clock, observer: observer}, nil
 }
 
 func (s *ReviewService) Create(
@@ -49,6 +53,7 @@ func (s *ReviewService) Create(
 	if err != nil {
 		return domain.Review{}, fmt.Errorf("create review: %w", err)
 	}
+	s.observer.ReviewCreated(review.Score)
 	return review, nil
 }
 
