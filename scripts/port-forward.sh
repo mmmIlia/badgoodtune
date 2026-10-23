@@ -14,7 +14,10 @@ shift 3
 log=$(mktemp)
 "${KUBECTL:-kubectl}" port-forward --address=127.0.0.1 --namespace "$namespace" "$resource" "$mapping" >"$log" 2>&1 &
 forward_pid=$!
-trap 'kill "$forward_pid" 2>/dev/null || true; wait "$forward_pid" 2>/dev/null || true; rm -f "$log"' EXIT HUP INT TERM
+trap 'kill "$forward_pid" 2>/dev/null || true; wait "$forward_pid" 2>/dev/null || true; rm -f "$log"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 attempt=0
 until grep -q '^Forwarding from ' "$log"; do

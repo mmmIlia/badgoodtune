@@ -174,6 +174,8 @@ k8s-scale-up: ## Scale backend to 3 and frontend to 2 replicas
 k8s-scale-down: ## Scale backend and frontend back to 1 replica
 	$(KUBECTL) scale deployment/badgoodtune-backend --replicas=1 -n $(K8S_NAMESPACE)
 	$(KUBECTL) scale deployment/badgoodtune-frontend --replicas=1 -n $(K8S_NAMESPACE)
+	$(KUBECTL) rollout status deployment/badgoodtune-backend -n $(K8S_NAMESPACE) --timeout=$(K8S_ROLLOUT_TIMEOUT)
+	$(KUBECTL) rollout status deployment/badgoodtune-frontend -n $(K8S_NAMESPACE) --timeout=$(K8S_ROLLOUT_TIMEOUT)
 
 k8s-open: ## Open the frontend through its Minikube Service
 	$(MINIKUBE) service badgoodtune-frontend -n $(K8S_NAMESPACE)
@@ -218,25 +220,14 @@ logs-open: ## Forward VictoriaLogs vmui to http://127.0.0.1:9428/select/vmui/
 	$(KUBECTL) port-forward service/victoria-logs 9428:9428 -n $(OBSERVABILITY_NAMESPACE)
 
 logs-query: ## Run LOGS_QUERY against VictoriaLogs through a temporary port-forward
-	@set -eu; log=$$(mktemp); \
-		$(KUBECTL) port-forward service/victoria-logs 19428:9428 -n $(OBSERVABILITY_NAMESPACE) >"$$log" 2>&1 & pid=$$!; \
-		trap 'kill "$$pid" 2>/dev/null || true; wait "$$pid" 2>/dev/null || true; rm -f "$$log"' EXIT HUP INT TERM; \
-		i=0; until curl --fail --silent http://127.0.0.1:19428/health >/dev/null 2>&1; do \
-			i=$$((i + 1)); if [ "$$i" -ge 30 ]; then cat "$$log"; exit 1; fi; sleep 1; \
-		done; \
-		curl --fail --silent --show-error --get \
-			--data-urlencode "query=$$LOGS_QUERY" \
-			--data-urlencode "limit=$$LOGS_LIMIT" \
+	@./scripts/port-forward.sh $(OBSERVABILITY_NAMESPACE) service/victoria-logs 19428:9428 \
+		curl --fail --silent --show-error --max-time 15 --get \
+			--data-urlencode "query=$$LOGS_QUERY" --data-urlencode "limit=$$LOGS_LIMIT" \
 			http://127.0.0.1:19428/select/logsql/query
 
 logs-generate: ## Run the CRUD smoke test through Kubernetes to generate application logs
-	@set -eu; log=$$(mktemp); \
-		$(KUBECTL) port-forward service/badgoodtune-frontend 18080:80 -n $(K8S_NAMESPACE) >"$$log" 2>&1 & pid=$$!; \
-		trap 'kill "$$pid" 2>/dev/null || true; wait "$$pid" 2>/dev/null || true; rm -f "$$log"' EXIT HUP INT TERM; \
-		i=0; until curl --fail --silent http://127.0.0.1:18080/healthz >/dev/null 2>&1; do \
-			i=$$((i + 1)); if [ "$$i" -ge 30 ]; then cat "$$log"; exit 1; fi; sleep 1; \
-		done; \
-		BASE_URL=http://127.0.0.1:18080 ./scripts/smoke.sh
+	@./scripts/port-forward.sh $(K8S_NAMESPACE) service/badgoodtune-frontend 18080:80 \
+		env BASE_URL=http://127.0.0.1:18080 ./scripts/smoke.sh
 
 logs-delete: ## Delete VictoriaLogs and Vector with their stored logs
 	$(HELM) uninstall $(VICTORIA_LOGS_RELEASE) -n $(OBSERVABILITY_NAMESPACE) --ignore-not-found
@@ -280,17 +271,7 @@ alertmanager-open: ## Forward Alertmanager UI to http://127.0.0.1:9093/
 	$(KUBECTL) port-forward service/alertmanager 9093:9093 -n $(OBSERVABILITY_NAMESPACE)
 
 alerts-check: ## Wait until the BadGoodTune warning-log alert is firing
-	@set -eu; log=$$(mktemp); response=$$(mktemp); \
-		$(KUBECTL) port-forward service/vmalert 18880:8880 -n $(OBSERVABILITY_NAMESPACE) >"$$log" 2>&1 & pid=$$!; \
-		trap 'kill "$$pid" 2>/dev/null || true; wait "$$pid" 2>/dev/null || true; rm -f "$$log" "$$response"' EXIT HUP INT TERM; \
-		i=0; until curl --fail --silent http://127.0.0.1:18880/-/ready >/dev/null 2>&1; do \
-			i=$$((i + 1)); if [ "$$i" -ge 30 ]; then cat "$$log"; exit 1; fi; sleep 1; \
-		done; \
-		i=0; until curl --fail --silent http://127.0.0.1:18880/api/v1/alerts >"$$response" \
-			&& jq --exit-status 'any(.data.alerts[]?; .name == "BadGoodTuneWarningLogs" and .state == "firing")' "$$response" >/dev/null; do \
-			i=$$((i + 1)); if [ "$$i" -ge 45 ]; then cat "$$response"; exit 1; fi; sleep 2; \
-		done; \
-		cat "$$response"
+	@./scripts/port-forward.sh $(OBSERVABILITY_NAMESPACE) service/vmalert 18880:8880 ./scripts/check-alerts.sh
 
 alerts-trigger: logs-generate ## Generate warning logs and verify that the alert fires
 	$(MAKE) alerts-check

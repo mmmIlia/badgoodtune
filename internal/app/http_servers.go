@@ -10,6 +10,9 @@ import (
 )
 
 func runHTTPServers(ctx context.Context, timeout time.Duration, servers ...*http.Server) error {
+	if len(servers) == 0 {
+		return errors.New("at least one HTTP server is required")
+	}
 	listeners := make([]net.Listener, 0, len(servers))
 	for _, server := range servers {
 		listener, err := net.Listen("tcp", server.Addr)
@@ -27,6 +30,8 @@ func runHTTPServers(ctx context.Context, timeout time.Duration, servers ...*http
 			err := server.Serve(listeners[i])
 			if errors.Is(err, http.ErrServerClosed) {
 				err = nil
+			} else if err != nil {
+				err = fmt.Errorf("serve %s: %w", server.Addr, err)
 			}
 			results <- err
 		}()

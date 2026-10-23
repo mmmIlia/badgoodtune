@@ -5,10 +5,15 @@ metrics_url=${METRICS_URL:-http://127.0.0.1:18428}
 namespace=${K8S_NAMESPACE:-badgoodtune}
 kubectl_command=${KUBECTL:-kubectl}
 wait_timeout=${METRICS_WAIT_TIMEOUT:-90}
-baseline=$(mktemp)
-current=$(mktemp)
-diagnostic=$(mktemp)
-trap 'rm -f "$baseline" "$current" "$diagnostic"' EXIT HUP INT TERM
+review_score=${SMOKE_REVIEW_SCORE:-9}
+directory=$(mktemp -d)
+baseline=$directory/baseline.json
+current=$directory/current.json
+diagnostic=$directory/error.log
+trap 'rm -f "$baseline" "$current" "$diagnostic"; rmdir "$directory"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 snapshot() {
     curl --fail --silent --show-error --max-time 10 --get \
@@ -31,12 +36,12 @@ until snapshot >"$baseline" 2>"$diagnostic"; do
     fi
     sleep 2
 done
-./scripts/port-forward.sh "$namespace" service/badgoodtune-frontend 18080:80 env BASE_URL=http://127.0.0.1:18080 ./scripts/smoke.sh
+./scripts/port-forward.sh "$namespace" service/badgoodtune-frontend 18080:80 env BASE_URL=http://127.0.0.1:18080 SMOKE_REVIEW_SCORE="$review_score" ./scripts/smoke.sh
 
 printf '%s\n' 'Waiting for the next scrape to verify business metric changes...'
 deadline=$(( $(date +%s) + wait_timeout ))
-until snapshot >"$current" 2>"$diagnostic" && jq --exit-status --slurpfile baseline "$baseline" '
-    to_entries | all(.value == ($baseline[0][.key] + (if .key == "badgoodtune_review_score_sum" then 9 else 1 end)))
+until snapshot >"$current" 2>"$diagnostic" && jq --exit-status --slurpfile baseline "$baseline" --argjson score "$review_score" '
+    to_entries | all(.value == ($baseline[0][.key] + (if .key == "badgoodtune_review_score_sum" then $score else 1 end)))
   ' "$current" >/dev/null; do
     if [ "$(date +%s)" -ge "$deadline" ]; then
         printf '%s\n' 'Business counters did not change as expected. Check for concurrent traffic or backend restarts.' >&2

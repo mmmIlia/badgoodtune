@@ -41,10 +41,75 @@ function album(id: string): Album {
 }
 
 afterEach(() => {
-  vi.clearAllMocks()
+  vi.resetAllMocks()
 })
 
 describe('useAlbumDetail', () => {
+  it('ignores stale pagination after leaving and returning to the same album', async () => {
+    const stalePage = deferred<{ data: { reviews: []; nextPageToken: string } }>()
+    api.getAlbum.mockResolvedValue({ data: album('first') })
+    api.listReviews
+      .mockResolvedValue({ data: { reviews: [] } })
+      .mockResolvedValueOnce({ data: { reviews: [], nextPageToken: 'page-2' } })
+      .mockReturnValueOnce(stalePage.promise)
+
+    const albumId = ref('first')
+    const scope = effectScope()
+    try {
+      const state = scope.run(() =>
+        useAlbumDetail(
+          computed(() => albumId.value),
+          vi.fn(),
+        ),
+      )!
+      await flushPromises()
+      const pagination = state.loadMoreReviews()
+      albumId.value = 'second'
+      await nextTick()
+      albumId.value = 'first'
+      await nextTick()
+      await flushPromises()
+      expect(state.nextPageToken.value).toBeUndefined()
+
+      stalePage.resolve({ data: { reviews: [], nextPageToken: 'stale-page' } })
+      await pagination
+      expect(state.nextPageToken.value).toBeUndefined()
+    } finally {
+      scope.stop()
+    }
+  })
+
+  it('ignores an old response even after returning to the same album', async () => {
+    const staleAlbum = deferred<{ data: Album }>()
+    const staleReviews = deferred<{ data: { reviews: [] } }>()
+    api.getAlbum.mockResolvedValue({ data: album('first') }).mockReturnValueOnce(staleAlbum.promise)
+    api.listReviews.mockResolvedValue({ data: { reviews: [] } }).mockReturnValueOnce(staleReviews.promise)
+
+    const albumId = ref('first')
+    const scope = effectScope()
+    try {
+      const state = scope.run(() =>
+        useAlbumDetail(
+          computed(() => albumId.value),
+          vi.fn(),
+        ),
+      )!
+      albumId.value = 'second'
+      await nextTick()
+      albumId.value = 'first'
+      await nextTick()
+      await flushPromises()
+      expect(state.album.value?.version).toBe(1)
+
+      staleAlbum.resolve({ data: { ...album('first'), version: 0 } })
+      staleReviews.resolve({ data: { reviews: [] } })
+      await flushPromises()
+      expect(state.album.value?.version).toBe(1)
+    } finally {
+      scope.stop()
+    }
+  })
+
   it('ignores a page response after the route changes', async () => {
     const firstAlbum = deferred<{ data: Album }>()
     const secondAlbum = deferred<{ data: Album }>()

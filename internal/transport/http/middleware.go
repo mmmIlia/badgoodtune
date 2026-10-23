@@ -75,16 +75,18 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 			status = http.StatusOK
 		}
 		level := requestLogLevel(r.URL.Path, status)
+		operation := requestOperation(recorder, r)
+		duration := time.Since(started)
 		if observe {
-			s.observer.RequestCompleted(requestOperation(recorder, r), status, time.Since(started))
+			s.observer.RequestCompleted(operation, status, duration)
 		}
 		s.logger.LogAttrs(r.Context(), level, "HTTP request",
 			slog.String("request_id", requestIDFromContext(r.Context())),
 			slog.String("method", r.Method),
-			slog.String("operation", requestOperation(recorder, r)),
+			slog.String("operation", operation),
 			slog.Int("status", status),
 			slog.Int("response_bytes", recorder.bytes),
-			slog.Float64("duration_ms", float64(time.Since(started))/float64(time.Millisecond)),
+			slog.Float64("duration_ms", float64(duration)/float64(time.Millisecond)),
 		)
 	})
 }

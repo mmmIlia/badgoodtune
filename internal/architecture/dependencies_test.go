@@ -1,10 +1,10 @@
 package architecture_test
 
 import (
-	"go/ast"
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -15,6 +15,19 @@ import (
 )
 
 const modulePath = "github.com/mmmIlia/badgoodtune"
+
+func TestImportsIncludeNestedPackages(t *testing.T) {
+	directory := t.TempDir()
+	nested := filepath.Join(directory, "nested")
+	require.NoError(t, os.Mkdir(nested, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(nested, "example.go"), []byte("package nested\nimport _ \"context\"\n"), 0o600))
+	var imports []string
+	assertImports(t, directory, func(importPath string) bool {
+		imports = append(imports, importPath)
+		return true
+	})
+	require.Equal(t, []string{"context"}, imports)
+}
 
 func TestLayerDependencies(t *testing.T) {
 	repositoryRoot := repositoryRoot(t)
@@ -62,29 +75,29 @@ func TestLayerDependencies(t *testing.T) {
 
 func assertImports(t *testing.T, directory string, allowed func(string) bool) {
 	t.Helper()
-	packages, err := parser.ParseDir(token.NewFileSet(), directory, func(info fs.FileInfo) bool {
-		return !strings.HasSuffix(info.Name(), "_test.go")
-	}, parser.ImportsOnly)
-	require.NoError(t, err)
-
-	for _, parsedPackage := range packages {
-		for filename, file := range parsedPackage.Files {
-			for _, declaration := range file.Decls {
-				importDeclaration, ok := declaration.(*ast.GenDecl)
-				if !ok || importDeclaration.Tok != token.IMPORT {
-					continue
-				}
-				for _, specification := range importDeclaration.Specs {
-					importSpecification := specification.(*ast.ImportSpec)
-					importPath, unquoteErr := strconv.Unquote(importSpecification.Path.Value)
-					require.NoError(t, unquoteErr)
-					if !allowed(importPath) {
-						t.Errorf("%s imports forbidden dependency %q", filename, importPath)
-					}
-				}
+	err := filepath.WalkDir(directory, func(filename string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(filename, ".go") || strings.HasSuffix(filename, "_test.go") {
+			return nil
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), filename, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, specification := range file.Imports {
+			importPath, err := strconv.Unquote(specification.Path.Value)
+			if err != nil {
+				return err
+			}
+			if !allowed(importPath) {
+				t.Errorf("%s imports forbidden dependency %q", filename, importPath)
 			}
 		}
-	}
+		return nil
+	})
+	require.NoError(t, err)
 }
 
 func isThirdParty(importPath string) bool {

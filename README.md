@@ -4,7 +4,7 @@
 
 ## Запуск
 
-Нужен Docker с Compose v2.
+Нужен Docker с Compose v2; для smoke-проверки — `curl` и `jq`.
 
 ```bash
 docker compose up --build -d --wait
@@ -45,7 +45,7 @@ internal/app                 сборка и запуск приложения
 
 ## Разработка
 
-Нужны Go из `go.mod` и Node.js 24 LTS из `.nvmrc`.
+Нужны Go из `go.mod` и Node.js 24 LTS из `.nvmrc`. Тесты эксплуатационных скриптов также используют `curl` и `jq`.
 
 ```bash
 make generate       # обновить код из OpenAPI и SQL

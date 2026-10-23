@@ -6,8 +6,25 @@ namespace=${K8S_NAMESPACE:-badgoodtune}
 kubectl_command=${KUBECTL:-kubectl}
 wait_timeout=${METRICS_WAIT_TIMEOUT:-90}
 replicas=$("$kubectl_command" get deployment/badgoodtune-backend -n "$namespace" -o jsonpath='{.spec.replicas}')
+database_name=$("$kubectl_command" get configmap/badgoodtune-config -n "$namespace" -o jsonpath='{.data.POSTGRES_DB}')
+test -n "$database_name"
+database_label=$(printf '%s' "$database_name" | jq --raw-input --slurp .)
+required_metrics='[
+  "go_goroutines",
+  "process_cpu_seconds_total",
+  "badgoodtune_users_registered_total",
+  "badgoodtune_logins_total",
+  "badgoodtune_albums_created_total",
+  "badgoodtune_reviews_created_total",
+  "badgoodtune_review_score_count",
+  "badgoodtune_review_score_sum"
+]'
+metric_pattern=$(printf '%s' "$required_metrics" | jq --raw-output 'join("|")')
 response=$(mktemp)
-trap 'rm -f "$response"' EXIT HUP INT TERM
+trap 'rm -f "$response"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 wait_for() {
     description=$1
@@ -25,13 +42,17 @@ wait_for() {
 }
 
 targets_ready() {
+    current_pods=$("$kubectl_command" get pods -n "$namespace" -l app.kubernetes.io/name=badgoodtune,app.kubernetes.io/component=backend -o json |
+        jq --compact-output '[.items[] | select(.metadata.deletionTimestamp == null and .status.phase == "Running") | .metadata.name] | sort') || return 1
     curl --fail --silent --show-error --max-time 10 "$metrics_url/api/v1/targets" >"$response" &&
-    jq --exit-status --argjson replicas "$replicas" '
-      .status == "success" and
+    jq --exit-status --argjson replicas "$replicas" --argjson pods "$current_pods" '
+      .status == "success" and $replicas > 0 and
       ([.data.activeTargets[] | select(.labels.job == "badgoodtune-backend")] | length == $replicas and all(.health == "up")) and
+      ([.data.activeTargets[] | select(.labels.job == "badgoodtune-backend") | .labels.pod] | sort) == $pods and
       ([.data.activeTargets[] | select(.labels.job == "postgres")] | length == 1 and all(.health == "up"))
     ' "$response" >/dev/null || return 1
     backend_pods=$(jq --compact-output '[.data.activeTargets[] | select(.labels.job == "badgoodtune-backend") | .labels.pod] | sort' "$response")
+    postgres_pod=$(jq --raw-output '.data.activeTargets[] | select(.labels.job == "postgres") | .labels.pod' "$response")
 }
 
 query() {
@@ -39,17 +60,20 @@ query() {
 }
 
 backend_metrics_ready() {
-    query 'count by (__name__, pod) ({job="badgoodtune-backend",__name__=~"go_goroutines|process_cpu_seconds_total|badgoodtune_users_registered_total|badgoodtune_logins_total|badgoodtune_albums_created_total|badgoodtune_reviews_created_total|badgoodtune_review_score_count|badgoodtune_review_score_sum"})' &&
-    jq --exit-status --argjson replicas "$replicas" --argjson pods "$backend_pods" '
-      .status == "success" and (.data.result | length == (8 * $replicas) and all(.value[1] == "1")) and
-      ([.data.result[].metric.pod] | unique) == $pods
+    targets_ready &&
+    query "count by (__name__, pod) ({job=\"badgoodtune-backend\",__name__=~\"$metric_pattern\"})" &&
+    jq --exit-status --argjson names "$required_metrics" --argjson pods "$backend_pods" '
+      .status == "success" and
+      ([.data.result[] | [.metric.pod, .metric.__name__, .value[1]]] | sort) ==
+      ([$pods[] as $pod | $names[] | [$pod, ., "1"]] | sort)
     ' "$response" >/dev/null
 }
 
 postgres_metrics_ready() {
-    query 'pg_up{job="postgres"}' &&
+    targets_ready &&
+    query "pg_up{job=\"postgres\",pod=\"$postgres_pod\"}" &&
     jq --exit-status '.status == "success" and (.data.result | length == 1 and all(.value[1] == "1"))' "$response" >/dev/null &&
-    query 'pg_stat_database_numbackends{job="postgres",datname="badgoodtune"}' &&
+    query "pg_stat_database_numbackends{job=\"postgres\",pod=\"$postgres_pod\",datname=$database_label}" &&
     jq --exit-status '.status == "success" and (.data.result | length == 1)' "$response" >/dev/null
 }
 

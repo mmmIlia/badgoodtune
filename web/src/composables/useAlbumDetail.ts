@@ -29,6 +29,10 @@ export function useAlbumDetail(albumId: ComputedRef<string>, onAlbumDeleted: () 
     return requestedAlbumId === albumId.value
   }
 
+  function isCurrentAlbumOperation(operation: number, requestedAlbumId: string) {
+    return operation === albumOperation && isCurrentAlbum(requestedAlbumId)
+  }
+
   function isCurrentReviewOperation(operation: number, requestedAlbumId: string) {
     return operation === reviewOperation && isCurrentAlbum(requestedAlbumId)
   }
@@ -56,6 +60,7 @@ export function useAlbumDetail(albumId: ComputedRef<string>, onAlbumDeleted: () 
 
   async function loadMoreReviews() {
     if (loadingMore.value || !nextPageToken.value) return
+    const operation = albumOperation
     const requestedAlbumId = albumId.value
     const pageToken = nextPageToken.value
     loadingMore.value = true
@@ -65,20 +70,20 @@ export function useAlbumDetail(albumId: ComputedRef<string>, onAlbumDeleted: () 
         path: { albumId: requestedAlbumId },
         query: { pageSize: reviewsPageSize, pageToken, orderBy: 'createdAt desc' },
       })
-      if (!isCurrentAlbum(requestedAlbumId)) return
+      if (!isCurrentAlbumOperation(operation, requestedAlbumId)) return
       reviews.value = [...reviews.value, ...response.data.reviews]
       nextPageToken.value = response.data.nextPageToken
     } catch (cause) {
-      if (isCurrentAlbum(requestedAlbumId)) error.value = problemMessage(cause)
+      if (isCurrentAlbumOperation(operation, requestedAlbumId)) error.value = problemMessage(cause)
     } finally {
-      if (isCurrentAlbum(requestedAlbumId)) loadingMore.value = false
+      if (isCurrentAlbumOperation(operation, requestedAlbumId)) loadingMore.value = false
     }
   }
 
   async function loadPage() {
     const requestedAlbumId = albumId.value
     reviewOperation += 1
-    albumOperation += 1
+    const operation = ++albumOperation
     loading.value = true
     loadingMore.value = false
     savingReview.value = false
@@ -96,14 +101,14 @@ export function useAlbumDetail(albumId: ComputedRef<string>, onAlbumDeleted: () 
           query: { pageSize: reviewsPageSize, orderBy: 'createdAt desc' },
         }),
       ])
-      if (!isCurrentAlbum(requestedAlbumId)) return
+      if (!isCurrentAlbumOperation(operation, requestedAlbumId)) return
       album.value = albumResponse.data
       reviews.value = reviewsResponse.data.reviews
       nextPageToken.value = reviewsResponse.data.nextPageToken
     } catch (cause) {
-      if (isCurrentAlbum(requestedAlbumId)) error.value = problemMessage(cause)
+      if (isCurrentAlbumOperation(operation, requestedAlbumId)) error.value = problemMessage(cause)
     } finally {
-      if (isCurrentAlbum(requestedAlbumId)) loading.value = false
+      if (isCurrentAlbumOperation(operation, requestedAlbumId)) loading.value = false
     }
   }
 
