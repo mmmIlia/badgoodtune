@@ -47,6 +47,8 @@ check: ## Run code generation, formatting, static analysis, tests, frontend chec
 	$(MAKE) logs-validate
 	$(MAKE) alerts-validate
 	$(MAKE) metrics-validate
+	$(MAKE) reliability-validate
+	$(MAKE) reliability-test
 
 generate: ## Regenerate Go and TypeScript code from OpenAPI and SQL
 	cd api && go tool oapi-codegen --config oapi-codegen.yaml openapi.yaml
@@ -283,7 +285,7 @@ stack-up: ## Deploy the application and the complete observability stack
 	$(MAKE) k8s-up
 	$(MAKE) logs-deploy
 	$(MAKE) alerts-deploy
-	$(MAKE) metrics-deploy
+	$(MAKE) reliability-deploy
 
 stack-down: ## Delete the application and observability stack, then stop Minikube
 	$(MAKE) metrics-delete
@@ -367,3 +369,5 @@ metrics-debug: ## Show recent VictoriaMetrics and PostgreSQL exporter logs
 metrics-delete: ## Uninstall metrics workloads; retain TSDB PVC and the PostgreSQL monitoring role
 	$(HELM) uninstall $(VICTORIA_METRICS_RELEASE) -n $(OBSERVABILITY_NAMESPACE) --ignore-not-found
 	$(KUBECTL) delete -R -f $(POSTGRES_EXPORTER_DIR) --ignore-not-found
+
+include make/reliability.mk

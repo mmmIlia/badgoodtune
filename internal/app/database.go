@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -18,6 +19,7 @@ func connectDatabase(ctx context.Context, settings config.Database) (*pgxpool.Po
 	poolConfig.MinConns = settings.Pool.MinConnections
 	poolConfig.ConnConfig.ConnectTimeout = settings.Connection.ConnectTimeout
 	poolConfig.ConnConfig.RuntimeParams["application_name"] = "badgoodtune-server"
+	poolConfig.ConnConfig.RuntimeParams["statement_timeout"] = strconv.FormatInt(settings.Queries.StatementTimeout.Milliseconds(), 10)
 
 	connectContext, cancel := context.WithTimeout(ctx, settings.Connection.ConnectTimeout)
 	defer cancel()

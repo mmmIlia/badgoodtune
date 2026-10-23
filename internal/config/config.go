@@ -33,6 +33,11 @@ type HTTP struct {
 type Database struct {
 	Connection DatabaseConnection
 	Pool       DatabasePool
+	Queries    DatabaseQueries
+}
+
+type DatabaseQueries struct {
+	StatementTimeout time.Duration `env:"DATABASE_STATEMENT_TIMEOUT" env-default:"5s"`
 }
 
 type DatabaseConnection struct {

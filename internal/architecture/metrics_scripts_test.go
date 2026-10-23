@@ -107,7 +107,7 @@ func TestPortForwardReturnsCommandFailureAndStopsProcess(t *testing.T) {
 	require.NoError(t, os.WriteFile(kubectl, []byte(script), 0o700))
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
-	command := exec.CommandContext(ctx, "./scripts/port-forward.sh", "observability", "service/victoria-metrics", "18428:8428", "sh", "-c", "exit 7")
+	command := exec.CommandContext(ctx, "./scripts/port-forward.sh", "observability", "service/victoria-metrics", ":8428", "sh", "-c", "test \"$FORWARDED_PORT\" = 18428 || exit 9; exit 7")
 	command.Dir = repositoryRoot(t)
 	command.Env = append(os.Environ(), "KUBECTL="+kubectl)
 	output, err := command.CombinedOutput()

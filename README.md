@@ -163,3 +163,20 @@ make metrics-query METRICS_QUERY='sum(rate(badgoodtune_reviews_created_total[5m]
 `k8s-backend-reload` и `k8s-frontend-reload` позволяют обновлять компоненты независимо.
 `metrics-delete` удаляет workloads метрик, сохраняя PVC и роль мониторинга PostgreSQL.
 `logs-delete` удаляет только логирование. `stack-down` удаляет весь стек, включая данные всех PVC в его namespace.
+
+## Надёжность
+
+Blackbox Exporter проверяет каталог через frontend, отдельный evaluator рассчитывает SLI.
+Цели, формулы и ограничения описаны в разделе ДЗ №5 файла [`Отчёт.md`](Отчёт.md).
+
+```bash
+make reliability-deploy
+make reliability-check
+make reliability-open          # vmui; ссылки также выводит reliability-graphs
+make reliability-monthly       # предварительный календарный SLA
+```
+
+Графики окна 5 минут предназначены для демонстрации; цели SLO заданы на 28 дней.
+Недостаточная история не означает выполненный SLA. Метрики хранятся 35 дней.
+`make check` включает тестирование правил через Docker; `make help` показывает команды локального
+эксперимента и восстановления. Эксперимент не запускается автоматически и не меняет строки БД.

@@ -24,6 +24,7 @@ func TestLoadPopulatesNestedSections(t *testing.T) {
 	assert.Equal(t, ":9090", settings.HTTP.Address)
 	assert.Equal(t, ":9091", settings.Metrics.Address)
 	assert.Equal(t, "postgres://example", settings.Database.Connection.URL)
+	assert.Equal(t, 5*time.Second, settings.Database.Queries.StatementTimeout)
 	assert.Equal(t, "test_session", settings.Auth.CookieName)
 	assert.Equal(t, "debug", settings.Logging.Level)
 }
@@ -52,6 +53,7 @@ func TestProductionConfigRequiresSecureHostCookie(t *testing.T) {
 		Database: config.Database{
 			Connection: config.DatabaseConnection{URL: "postgres://example", ConnectTimeout: time.Second},
 			Pool:       config.DatabasePool{MaxConnections: 2, MinConnections: 1},
+			Queries:    config.DatabaseQueries{StatementTimeout: 5 * time.Second},
 		},
 		Auth: config.Auth{
 			CookieName: "badgoodtune_session", SessionTTL: 24 * time.Hour,
@@ -65,4 +67,15 @@ func TestProductionConfigRequiresSecureHostCookie(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "COOKIE_SECURE")
 	assert.ErrorContains(t, err, "__Host-")
+}
+
+func TestStatementTimeoutValidation(t *testing.T) {
+	for _, value := range []string{"0s", "-1s", "500us", "6m"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("DATABASE_URL", "postgres://example")
+			t.Setenv("DATABASE_STATEMENT_TIMEOUT", value)
+			_, err := config.Load()
+			require.ErrorContains(t, err, "DATABASE_STATEMENT_TIMEOUT")
+		})
+	}
 }

@@ -1,0 +1,155 @@
+rule_files: [rules.yaml]
+evaluation_interval: 1m
+tests:
+  - name: successful requests, errors and expected client rejections
+    interval: 5s
+    input_series:
+      - series: 'badgoodtune_http_requests_total{job="badgoodtune-backend",operation="ListAlbums",code="200",pod="a"}'
+        values: '0+4x24'
+      - series: 'badgoodtune_http_requests_total{job="badgoodtune-backend",operation="ListAlbums",code="500",pod="b"}'
+        values: '0+1x24'
+      - series: 'badgoodtune_http_requests_total{job="badgoodtune-backend",operation="GetAlbum",code="404"}'
+        values: '0+99x24'
+      - series: 'badgoodtune_http_requests_total{job="badgoodtune-backend",operation="unmatched",code="500"}'
+        values: '0+99x24'
+      - series: 'badgoodtune_http_request_duration_seconds_bucket{job="badgoodtune-backend",operation="ListAlbums",code="200",le="0.5"}'
+        values: '0+3x24'
+      - series: 'badgoodtune_http_request_duration_seconds_count{job="badgoodtune-backend",operation="ListAlbums",code="200"}'
+        values: '0+4x24'
+      - series: 'badgoodtune_http_request_duration_seconds_bucket{job="badgoodtune-backend",operation="ListAlbums",code="500",le="0.5"}'
+        values: '0+99x24'
+      - series: 'badgoodtune_http_request_duration_seconds_count{job="badgoodtune-backend",operation="ListAlbums",code="500"}'
+        values: '0+99x24'
+    metricsql_expr_test:
+      - expr: 'badgoodtune:sli:ratio{indicator="api",window="5m"}'
+        eval_time: 2m
+        exp_samples:
+          - labels: 'badgoodtune:sli:ratio{indicator="api",window="5m"}'
+            value: 0.8
+      - expr: 'badgoodtune:sli:ratio{indicator="latency",window="5m"}'
+        eval_time: 2m
+        exp_samples:
+          - labels: 'badgoodtune:sli:ratio{indicator="latency",window="5m"}'
+            value: 0.75
+      - expr: 'badgoodtune:sli:ratio{window="28d"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'round(100 * (1 - (1 - badgoodtune:sli:ratio{window="5m"}) / on(indicator) group_left() (1 - badgoodtune:slo:target)), 0.000001)'
+        eval_time: 2m
+        exp_samples:
+          - labels: '{indicator="api",window="5m"}'
+            value: -3900
+          - labels: '{indicator="latency",window="5m"}'
+            value: -2400
+  - name: all requests fail, absent success series is not an absent service
+    interval: 5s
+    input_series:
+      - series: 'badgoodtune_http_requests_total{job="badgoodtune-backend",operation="ListAlbums",code="500"}'
+        values: '0+1x24'
+    metricsql_expr_test:
+      - expr: 'badgoodtune:sli:ratio{indicator="api",window="5m"}'
+        eval_time: 2m
+        exp_samples:
+          - labels: 'badgoodtune:sli:ratio{indicator="api",window="5m"}'
+            value: 0
+      - expr: 'badgoodtune:sli:ratio{indicator="latency",window="5m"}'
+        eval_time: 2m
+        exp_samples: []
+  - name: no traffic does not mean perfect availability
+    interval: 5s
+    input_series:
+      - series: 'badgoodtune_http_requests_total{job="badgoodtune-backend",operation="ListAlbums",code="200"}'
+        values: '0+0x24'
+    metricsql_expr_test:
+      - expr: 'badgoodtune:sli:ratio{indicator="api",window="5m"}'
+        eval_time: 2m
+        exp_samples: []
+      - expr: 'badgoodtune:sli_minute:state{indicator="catalog"}'
+        eval_time: 2m
+        exp_samples:
+          - labels: 'badgoodtune:sli_minute:state{indicator="catalog"}'
+            value: -1
+  - name: observed failures differ from missing probes
+    interval: 5s
+    input_series:
+      - series: 'probe_success{job="badgoodtune-probe"}'
+        values: '1x15 0 1x8'
+      - series: 'up{job="badgoodtune-probe"}'
+        values: '1x24'
+      - series: 'pg_up{job="postgres"}'
+        values: '1x24'
+      - series: 'up{job="postgres"}'
+        values: '1x24'
+    metricsql_expr_test:
+      - expr: 'badgoodtune:sli_minute:state{indicator="catalog"}'
+        eval_time: 2m
+        exp_samples:
+          - labels: 'badgoodtune:sli_minute:state{indicator="catalog"}'
+            value: 0
+      - expr: 'badgoodtune:sli_minute:state{indicator="database"}'
+        eval_time: 2m
+        exp_samples:
+          - labels: 'badgoodtune:sli_minute:state{indicator="database"}'
+            value: 1
+  - name: a failed scraper cannot reuse successful old probes
+    interval: 5s
+    input_series:
+      - series: 'probe_success{job="badgoodtune-probe"}'
+        values: '1x12 _x12'
+      - series: 'up{job="badgoodtune-probe"}'
+        values: '1x12 0x12'
+    metricsql_expr_test:
+      - expr: 'badgoodtune:sli_minute:state{indicator="catalog"}'
+        eval_time: 2m
+        exp_samples:
+          - labels: 'badgoodtune:sli_minute:state{indicator="catalog"}'
+            value: -1
+  - name: a counter reset is handled before replica aggregation
+    interval: 5s
+    input_series:
+      - series: 'badgoodtune_http_requests_total{job="badgoodtune-backend",operation="ListAlbums",code="200",pod="a"}'
+        values: '0+10x6 0+10x5'
+      - series: 'badgoodtune_http_requests_total{job="badgoodtune-backend",operation="ListAlbums",code="500",pod="b"}'
+        values: '0+1x12'
+    metricsql_expr_test:
+      - expr: 'round(badgoodtune:sli:ratio{indicator="api",window="5m"}, 0.000001)'
+        eval_time: 1m
+        exp_samples:
+          - labels: 'badgoodtune:sli:ratio{indicator="api",window="5m"}'
+            value: 0.901639
+  - name: five complete healthy minutes
+    interval: 5s
+    input_series:
+      - series: 'probe_success{job="badgoodtune-probe"}'
+        values: '1x72'
+      - series: 'up{job="badgoodtune-probe"}'
+        values: '1x72'
+    metricsql_expr_test:
+      - expr: 'badgoodtune:sli:ratio{indicator="catalog",window="5m"}'
+        eval_time: 6m
+        exp_samples:
+          - labels: 'badgoodtune:sli:ratio{indicator="catalog",window="5m"}'
+            value: 1
+      - expr: 'badgoodtune:sli:coverage{indicator="catalog",window="5m"}'
+        eval_time: 6m
+        exp_samples:
+          - labels: 'badgoodtune:sli:coverage{indicator="catalog",window="5m"}'
+            value: 1
+  - name: an unknown minute stays in the expected-minute denominator
+    interval: 5s
+    input_series:
+      - series: 'probe_success{job="badgoodtune-probe"}'
+        values: '1x35 _x12 1x24'
+      - series: 'up{job="badgoodtune-probe"}'
+        values: '1x72'
+    metricsql_expr_test:
+      - expr: 'badgoodtune:sli:ratio{indicator="catalog",window="5m"}'
+        eval_time: 6m
+        exp_samples:
+          - labels: 'badgoodtune:sli:ratio{indicator="catalog",window="5m"}'
+            value: 0.8
+      - expr: 'badgoodtune:sli:coverage{indicator="catalog",window="5m"}'
+        eval_time: 6m
+        exp_samples:
+          - labels: 'badgoodtune:sli:coverage{indicator="catalog",window="5m"}'
+            value: 0.8

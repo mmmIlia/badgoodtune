@@ -29,4 +29,7 @@ until grep -q '^Forwarding from ' "$log"; do
     sleep 1
 done
 
+FORWARDED_PORT=$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) -> .*/\1/p' "$log" | head -n 1)
+export FORWARDED_PORT
+
 "$@"

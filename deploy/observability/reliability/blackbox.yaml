@@ -1,0 +1,14 @@
+modules:
+  catalog:
+    prober: http
+    timeout: 3s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      valid_status_codes: [200]
+      follow_redirects: false
+      fail_if_header_not_matches:
+        - header: Content-Type
+          regexp: '^application/json(;.*)?$'
+      fail_if_body_not_matches_regexp:
+        - '"albums"\s*:\s*\['

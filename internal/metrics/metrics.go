@@ -42,7 +42,7 @@ func New() *Metrics {
 		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "badgoodtune", Name: "http_request_duration_seconds", Help: "API request duration in seconds.",
 			Buckets: prometheus.DefBuckets,
-		}, []string{"operation"}),
+		}, []string{"operation", "code"}),
 		inFlight: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: "badgoodtune", Name: "http_requests_in_flight", Help: "Number of API requests currently being served.",
 		}),

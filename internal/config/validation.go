@@ -79,7 +79,11 @@ func (h HTTP) problems() []string {
 
 func (d Database) problems() []string {
 	problems := d.Connection.problems()
-	return append(problems, d.Pool.problems()...)
+	problems = append(problems, d.Pool.problems()...)
+	if d.Queries.StatementTimeout < time.Millisecond || d.Queries.StatementTimeout > 5*time.Minute {
+		problems = append(problems, "DATABASE_STATEMENT_TIMEOUT must be between 1ms and 5m")
+	}
+	return problems
 }
 
 func (c DatabaseConnection) problems() []string {

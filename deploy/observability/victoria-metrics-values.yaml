@@ -9,7 +9,7 @@ server:
   fullnameOverride: victoria-metrics
   image:
     tag: v1.154.0
-  retentionPeriod: 7d
+  retentionPeriod: 35d
   persistentVolume:
     storageClassName: standard
     size: 2Gi
@@ -48,6 +48,22 @@ server:
         - job_name: victoria-metrics
           static_configs:
             - targets: [localhost:8428]
+        - job_name: badgoodtune-probe
+          scrape_interval: 5s
+          scrape_timeout: 4s
+          metrics_path: /probe
+          params:
+            module: [catalog]
+          static_configs:
+            - targets:
+                - http://badgoodtune-frontend.badgoodtune.svc.cluster.local/api/v1/albums?pageSize=1
+          relabel_configs:
+            - source_labels: [__address__]
+              target_label: __param_target
+            - source_labels: [__param_target]
+              target_label: instance
+            - target_label: __address__
+              replacement: blackbox-exporter.observability.svc.cluster.local:9115
         - job_name: application-pods
           kubernetes_sd_configs:
             - role: pod

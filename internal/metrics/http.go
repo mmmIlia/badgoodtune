@@ -9,6 +9,7 @@ func (m *Metrics) RequestStarted() { m.inFlight.Inc() }
 
 func (m *Metrics) RequestCompleted(operation string, status int, duration time.Duration) {
 	m.inFlight.Dec()
-	m.requests.WithLabelValues(operation, strconv.Itoa(status)).Inc()
-	m.duration.WithLabelValues(operation).Observe(duration.Seconds())
+	code := strconv.Itoa(status)
+	m.requests.WithLabelValues(operation, code).Inc()
+	m.duration.WithLabelValues(operation, code).Observe(duration.Seconds())
 }

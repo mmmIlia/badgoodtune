@@ -59,3 +59,43 @@ func TestMetricsHandlesConcurrentEvents(t *testing.T) {
 	}
 	t.Fatal("review score histogram is missing")
 }
+
+func TestLatencySeparatesSuccessfulAndFailedRequests(t *testing.T) {
+	m := New()
+	for _, request := range []struct {
+		status   int
+		duration time.Duration
+	}{{200, 100 * time.Millisecond}, {200, time.Second}, {500, time.Millisecond}} {
+		m.RequestStarted()
+		m.RequestCompleted("ListAlbums", request.status, request.duration)
+	}
+	families, err := m.registry.Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		if family.GetName() != "badgoodtune_http_request_duration_seconds" {
+			continue
+		}
+		require.Len(t, family.Metric, 2)
+		for _, metric := range family.Metric {
+			code := ""
+			for _, label := range metric.Label {
+				if label.GetName() == "code" {
+					code = label.GetValue()
+				}
+			}
+			if code == "200" {
+				assert.Equal(t, uint64(2), metric.Histogram.GetSampleCount())
+				for _, bucket := range metric.Histogram.Bucket {
+					if bucket.GetUpperBound() == 0.5 {
+						assert.Equal(t, uint64(1), bucket.GetCumulativeCount())
+					}
+				}
+			} else {
+				assert.Equal(t, "500", code)
+				assert.Equal(t, uint64(1), metric.Histogram.GetSampleCount())
+			}
+		}
+		return
+	}
+	t.Fatal("HTTP duration histogram is missing")
+}

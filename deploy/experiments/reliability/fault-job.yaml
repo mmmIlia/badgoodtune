@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: reliability-faults
+  namespace: badgoodtune
+  labels:
+    app.kubernetes.io/part-of: badgoodtune-reliability-experiment
+spec:
+  activeDeadlineSeconds: 90
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: badgoodtune-reliability-experiment
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: lock
+          image: postgres:17.11-alpine
+          command: [sh, /experiment/run.sh]
+          env:
+            - name: MODE
+              value: latency
+            - name: PGHOST
+              value: postgres
+            - name: PGCONNECT_TIMEOUT
+              value: "5"
+            - name: PGDATABASE
+              valueFrom:
+                configMapKeyRef: {name: badgoodtune-config, key: POSTGRES_DB}
+            - name: PGUSER
+              valueFrom:
+                configMapKeyRef: {name: badgoodtune-config, key: POSTGRES_USER}
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef: {name: badgoodtune-secret, key: POSTGRES_PASSWORD}
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {cpu: 100m, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: experiment
+              mountPath: /experiment
+              readOnly: true
+      volumes:
+        - name: experiment
+          configMap:
+            name: reliability-experiment

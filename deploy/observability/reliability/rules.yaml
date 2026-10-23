@@ -1,0 +1,103 @@
+groups:
+  - name: reliability-minutes
+    interval: 1m
+    eval_offset: 10s
+    rules:
+      - record: badgoodtune:sli_minute:state
+        labels: {indicator: catalog}
+        expr: >-
+          WITH (
+            known = (min(count_over_time(probe_success{job="badgoodtune-probe"}[1m] offset 10s)) >= bool 11)
+              * (min(min_over_time(up{job="badgoodtune-probe"}[1m] offset 10s)) == bool 1),
+            passed = min(min_over_time(probe_success{job="badgoodtune-probe"}[1m] offset 10s)) == bool 1
+          )
+          (known * passed - (1 - known)) or on() vector(-1)
+      - record: badgoodtune:sli_minute:state
+        labels: {indicator: database}
+        expr: >-
+          WITH (
+            known = (min(count_over_time(pg_up{job="postgres"}[1m] offset 10s)) >= bool 3)
+              * (min(min_over_time(up{job="postgres"}[1m] offset 10s)) == bool 1),
+            passed = min(min_over_time(pg_up{job="postgres"}[1m] offset 10s)) == bool 1
+          )
+          (known * passed - (1 - known)) or on() vector(-1)
+  - name: reliability-indicators
+    interval: 15s
+    rules:
+      - record: badgoodtune:sli:ratio
+        labels: {indicator: api, window: 5m}
+        expr: >-
+          WITH (
+            eligible = badgoodtune_http_requests_total{job="badgoodtune-backend",operation=~"RegisterUser|GetCurrentUser|CreateSession|DeleteCurrentSession|ListAlbums|CreateAlbum|GetAlbum|UpdateAlbum|DeleteAlbum|ListReviews|CreateReview|GetReview|UpdateReview|DeleteReview",code=~"2..|3..|5..|429"},
+            successes = badgoodtune_http_requests_total{job="badgoodtune-backend",operation=~"RegisterUser|GetCurrentUser|CreateSession|DeleteCurrentSession|ListAlbums|CreateAlbum|GetAlbum|UpdateAlbum|DeleteAlbum|ListReviews|CreateReview|GetReview|UpdateReview|DeleteReview",code=~"2.."},
+            total = sum(increase(eligible[5m]))
+          )
+          ((sum(increase(successes[5m])) or on() (0 * total)) / total) and on() (total > 0)
+      - record: badgoodtune:sli:ratio
+        labels: {indicator: latency, window: 5m}
+        expr: >-
+          WITH (
+            fast = badgoodtune_http_request_duration_seconds_bucket{job="badgoodtune-backend",operation=~"ListAlbums|GetAlbum|ListReviews|GetReview",code=~"2..",le="0.5"},
+            total = sum(increase(badgoodtune_http_request_duration_seconds_count{job="badgoodtune-backend",operation=~"ListAlbums|GetAlbum|ListReviews|GetReview",code=~"2.."}[5m]))
+          )
+          (sum(increase(fast[5m])) / total) and on() (total > 0)
+      - record: badgoodtune:sli:ratio
+        labels: {window: 5m}
+        expr: >-
+          (count_eq_over_time(badgoodtune:sli_minute:state[5m], 1) / 5)
+          and (time() - tfirst_over_time(badgoodtune:sli_minute:state[35d]) >= 5 * 60)
+      - record: badgoodtune:sli:coverage
+        labels: {window: 5m}
+        expr: >-
+          (count_ne_over_time(badgoodtune:sli_minute:state[5m], -1) / 5)
+          and (time() - tfirst_over_time(badgoodtune:sli_minute:state[35d]) >= 5 * 60)
+  - name: reliability-long-window
+    interval: 5m
+    rules:
+      - record: badgoodtune:sli:ratio
+        labels: {indicator: api, window: 28d}
+        expr: >-
+          WITH (
+            eligible = badgoodtune_http_requests_total{job="badgoodtune-backend",operation=~"RegisterUser|GetCurrentUser|CreateSession|DeleteCurrentSession|ListAlbums|CreateAlbum|GetAlbum|UpdateAlbum|DeleteAlbum|ListReviews|CreateReview|GetReview|UpdateReview|DeleteReview",code=~"2..|3..|5..|429"},
+            successes = badgoodtune_http_requests_total{job="badgoodtune-backend",operation=~"RegisterUser|GetCurrentUser|CreateSession|DeleteCurrentSession|ListAlbums|CreateAlbum|GetAlbum|UpdateAlbum|DeleteAlbum|ListReviews|CreateReview|GetReview|UpdateReview|DeleteReview",code=~"2.."},
+            total = sum(increase(eligible[28d])),
+            age = min(time() - tfirst_over_time(badgoodtune:sli_minute:state{indicator="catalog"}[35d]))
+          )
+          (((sum(increase(successes[28d])) or on() (0 * total)) / total) and on() (total > 0)) and on() (age >= 28 * 24 * 60 * 60)
+      - record: badgoodtune:sli:ratio
+        labels: {indicator: latency, window: 28d}
+        expr: >-
+          WITH (
+            fast = badgoodtune_http_request_duration_seconds_bucket{job="badgoodtune-backend",operation=~"ListAlbums|GetAlbum|ListReviews|GetReview",code=~"2..",le="0.5"},
+            total = sum(increase(badgoodtune_http_request_duration_seconds_count{job="badgoodtune-backend",operation=~"ListAlbums|GetAlbum|ListReviews|GetReview",code=~"2.."}[28d])),
+            age = min(time() - tfirst_over_time(badgoodtune:sli_minute:state{indicator="catalog"}[35d]))
+          )
+          ((sum(increase(fast[28d])) / total) and on() (total > 0)) and on() (age >= 28 * 24 * 60 * 60)
+      - record: badgoodtune:sli:ratio
+        labels: {window: 28d}
+        expr: >-
+          (count_eq_over_time(badgoodtune:sli_minute:state[28d], 1) / (28 * 24 * 60))
+          and (time() - tfirst_over_time(badgoodtune:sli_minute:state[35d]) >= 28 * 24 * 60 * 60)
+      - record: badgoodtune:sli:coverage
+        labels: {window: 28d}
+        expr: >-
+          (count_ne_over_time(badgoodtune:sli_minute:state[28d], -1) / (28 * 24 * 60))
+          and (time() - tfirst_over_time(badgoodtune:sli_minute:state[35d]) >= 28 * 24 * 60 * 60)
+  - name: reliability-objectives
+    interval: 15s
+    rules:
+      - record: badgoodtune:slo:target
+        labels: {indicator: api, kind: SLO}
+        expr: vector(0.995)
+      - record: badgoodtune:slo:target
+        labels: {indicator: latency, kind: SLO}
+        expr: vector(0.99)
+      - record: badgoodtune:slo:target
+        labels: {indicator: database, kind: SLO}
+        expr: vector(0.999)
+      - record: badgoodtune:slo:target
+        labels: {indicator: catalog, kind: SLO}
+        expr: vector(0.995)
+      - record: badgoodtune:sla:target
+        labels: {indicator: catalog, kind: SLA}
+        expr: vector(0.99)
